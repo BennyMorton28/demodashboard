@@ -1,4 +1,4 @@
-import { DEVELOPER_PROMPT } from "@/config/constants";
+import { DEVELOPER_PROMPT, CHARACTERS } from "@/config/constants";
 import { parse } from "partial-json";
 import { handleTool } from "@/lib/tools/tools-handling";
 import useConversationStore from "@/stores/useConversationStore";
@@ -15,7 +15,7 @@ export interface ContentItem {
 // Message items for storing conversation history matching API shape
 export interface MessageItem {
   type: "message";
-  role: "user" | "assistant" | "system";
+  role: "user" | "assistant" | "system" | "developer";
   id?: string;
   content: ContentItem[];
 }
@@ -99,20 +99,25 @@ export const handleTurn = async (
 
 export const processMessages = async () => {
   const {
-    chatMessages,
-    conversationItems,
+    selectedCharacter,
+    characters,
     setChatMessages,
     setConversationItems,
   } = useConversationStore.getState();
 
+  const currentCharacter = characters[selectedCharacter];
   const tools = getTools();
+
+  // Get the character's prompt
+  const characterPrompt = CHARACTERS[selectedCharacter].prompt;
+
   const allConversationItems = [
-    // Adding developer prompt as first item in the conversation
+    // Add the character's prompt as the developer prompt
     {
       role: "developer",
-      content: DEVELOPER_PROMPT,
+      content: characterPrompt,
     },
-    ...conversationItems,
+    ...currentCharacter.conversationItems,
   ];
 
   let assistantMessageContent = "";
@@ -133,14 +138,14 @@ export const processMessages = async () => {
         assistantMessageContent += partial;
 
         // If the last message isn't an assistant message, create a new one
-        const lastItem = chatMessages[chatMessages.length - 1];
+        const lastItem = currentCharacter.chatMessages[currentCharacter.chatMessages.length - 1];
         if (
           !lastItem ||
           lastItem.type !== "message" ||
           lastItem.role !== "assistant" ||
           (lastItem.id && lastItem.id !== item_id)
         ) {
-          chatMessages.push({
+          currentCharacter.chatMessages.push({
             type: "message",
             role: "assistant",
             id: item_id,
@@ -164,7 +169,7 @@ export const processMessages = async () => {
           }
         }
 
-        setChatMessages([...chatMessages]);
+        setChatMessages([...currentCharacter.chatMessages]);
         break;
       }
 
@@ -178,7 +183,7 @@ export const processMessages = async () => {
         switch (item.type) {
           case "message": {
             const text = item.content?.text || "";
-            chatMessages.push({
+            currentCharacter.chatMessages.push({
               type: "message",
               role: "assistant",
               content: [
@@ -188,7 +193,7 @@ export const processMessages = async () => {
                 },
               ],
             });
-            conversationItems.push({
+            currentCharacter.conversationItems.push({
               role: "assistant",
               content: [
                 {
@@ -197,13 +202,13 @@ export const processMessages = async () => {
                 },
               ],
             });
-            setChatMessages([...chatMessages]);
-            setConversationItems([...conversationItems]);
+            setChatMessages([...currentCharacter.chatMessages]);
+            setConversationItems([...currentCharacter.conversationItems]);
             break;
           }
           case "function_call": {
             functionArguments += item.arguments || "";
-            chatMessages.push({
+            currentCharacter.chatMessages.push({
               type: "tool_call",
               tool_type: "function_call",
               status: "in_progress",
@@ -213,27 +218,27 @@ export const processMessages = async () => {
               parsedArguments: {},
               output: null,
             });
-            setChatMessages([...chatMessages]);
+            setChatMessages([...currentCharacter.chatMessages]);
             break;
           }
           case "web_search_call": {
-            chatMessages.push({
+            currentCharacter.chatMessages.push({
               type: "tool_call",
               tool_type: "web_search_call",
               status: item.status || "in_progress",
               id: item.id,
             });
-            setChatMessages([...chatMessages]);
+            setChatMessages([...currentCharacter.chatMessages]);
             break;
           }
           case "file_search_call": {
-            chatMessages.push({
+            currentCharacter.chatMessages.push({
               type: "tool_call",
               tool_type: "file_search_call",
               status: item.status || "in_progress",
               id: item.id,
             });
-            setChatMessages([...chatMessages]);
+            setChatMessages([...currentCharacter.chatMessages]);
             break;
           }
         }
@@ -244,13 +249,13 @@ export const processMessages = async () => {
         // After output item is done, adding tool call ID
         const { item } = data || {};
 
-        const toolCallMessage = chatMessages.find((m) => m.id === item.id);
+        const toolCallMessage = currentCharacter.chatMessages.find((m) => m.id === item.id);
         if (toolCallMessage && toolCallMessage.type === "tool_call") {
           toolCallMessage.call_id = item.call_id;
-          setChatMessages([...chatMessages]);
+          setChatMessages([...currentCharacter.chatMessages]);
         }
-        conversationItems.push(item);
-        setConversationItems([...conversationItems]);
+        currentCharacter.conversationItems.push(item);
+        setConversationItems([...currentCharacter.conversationItems]);
       }
 
       case "response.function_call_arguments.delta": {
@@ -261,7 +266,7 @@ export const processMessages = async () => {
           parsedFunctionArguments = parse(functionArguments);
         }
 
-        const toolCallMessage = chatMessages.find((m) => m.id === data.item_id);
+        const toolCallMessage = currentCharacter.chatMessages.find((m) => m.id === data.item_id);
         if (toolCallMessage && toolCallMessage.type === "tool_call") {
           toolCallMessage.arguments = functionArguments;
           try {
@@ -269,7 +274,7 @@ export const processMessages = async () => {
           } catch {
             // partial JSON can fail parse; ignore
           }
-          setChatMessages([...chatMessages]);
+          setChatMessages([...currentCharacter.chatMessages]);
         }
         break;
       }
@@ -281,12 +286,12 @@ export const processMessages = async () => {
         functionArguments = finalArgs;
 
         // Mark the tool_call as "completed" and parse the final JSON
-        const toolCallMessage = chatMessages.find((m) => m.id === item_id);
+        const toolCallMessage = currentCharacter.chatMessages.find((m) => m.id === item_id);
         if (toolCallMessage && toolCallMessage.type === "tool_call") {
           toolCallMessage.arguments = finalArgs;
           toolCallMessage.parsedArguments = parse(finalArgs);
           toolCallMessage.status = "completed";
-          setChatMessages([...chatMessages]);
+          setChatMessages([...currentCharacter.chatMessages]);
 
           // Handle tool call (execute function)
           const toolResult = await handleTool(
@@ -296,14 +301,14 @@ export const processMessages = async () => {
 
           // Record tool output
           toolCallMessage.output = JSON.stringify(toolResult);
-          setChatMessages([...chatMessages]);
-          conversationItems.push({
+          setChatMessages([...currentCharacter.chatMessages]);
+          currentCharacter.conversationItems.push({
             type: "function_call_output",
             call_id: toolCallMessage.call_id,
             status: "completed",
             output: JSON.stringify(toolResult),
           });
-          setConversationItems([...conversationItems]);
+          setConversationItems([...currentCharacter.conversationItems]);
 
           // Create another turn after tool output has been added
           await processMessages();
@@ -313,22 +318,22 @@ export const processMessages = async () => {
 
       case "response.web_search_call.completed": {
         const { item_id, output } = data;
-        const toolCallMessage = chatMessages.find((m) => m.id === item_id);
+        const toolCallMessage = currentCharacter.chatMessages.find((m) => m.id === item_id);
         if (toolCallMessage && toolCallMessage.type === "tool_call") {
           toolCallMessage.output = output;
           toolCallMessage.status = "completed";
-          setChatMessages([...chatMessages]);
+          setChatMessages([...currentCharacter.chatMessages]);
         }
         break;
       }
 
       case "response.file_search_call.completed": {
         const { item_id, output } = data;
-        const toolCallMessage = chatMessages.find((m) => m.id === item_id);
+        const toolCallMessage = currentCharacter.chatMessages.find((m) => m.id === item_id);
         if (toolCallMessage && toolCallMessage.type === "tool_call") {
           toolCallMessage.output = output;
           toolCallMessage.status = "completed";
-          setChatMessages([...chatMessages]);
+          setChatMessages([...currentCharacter.chatMessages]);
         }
         break;
       }

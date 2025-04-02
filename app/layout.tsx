@@ -14,10 +14,11 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Responses starter app",
-  description: "Starter app for the OpenAI Responses API",
+  title: "Noyes AI Chat",
+  description: "Noyes AI - Intelligent Conversation Platform",
   icons: {
-    icon: "/openai_logo.svg",
+    icon: "/logo.PNG",
+    apple: "/logo.PNG",
   },
 };
 
@@ -31,7 +32,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <div className="flex h-screen bg-gray-200 w-full flex-col  text-stone-900">
+        <div className="flex h-screen w-full flex-col text-stone-900">
           <main>{children}</main>
         </div>
       </body>
