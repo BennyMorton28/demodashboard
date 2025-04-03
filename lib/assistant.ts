@@ -1,4 +1,4 @@
-import { DEVELOPER_PROMPT, CHARACTERS } from "@/config/constants";
+import { CHARACTERS } from "@/config/constants";
 import { parse } from "partial-json";
 import { handleTool } from "@/lib/tools/tools-handling";
 import useConversationStore from "@/stores/useConversationStore";
