@@ -5,6 +5,8 @@ import ToolCall from "./tool-call";
 import Message from "./message";
 import Annotations from "./annotations";
 import { Item } from "@/lib/assistant";
+import ConversationStarters from "./conversation-starters";
+import useConversationStore from "@/stores/useConversationStore";
 
 interface ChatProps {
   items: Item[];
@@ -16,6 +18,7 @@ const Chat: React.FC<ChatProps> = ({ items, onSendMessage }) => {
   const [inputMessageText, setinputMessageText] = useState<string>("");
   // This state is used to provide better user experience for non-English IMEs such as Japanese
   const [isComposing, setIsComposing] = useState(false);
+  const { selectedCharacter } = useConversationStore();
 
   const scrollToBottom = () => {
     itemsEndRef.current?.scrollIntoView({ behavior: "instant" });
@@ -38,6 +41,13 @@ const Chat: React.FC<ChatProps> = ({ items, onSendMessage }) => {
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto">
         <div className="px-4 py-4 space-y-4 mx-auto max-w-4xl">
+          {items.length === 0 && (
+            <ConversationStarters
+              characterId={selectedCharacter}
+              onSelectStarter={onSendMessage}
+              hasMessages={items.length > 0}
+            />
+          )}
           {items.map((item, index) => (
             <React.Fragment key={index}>
               {item.type === "tool_call" ? (

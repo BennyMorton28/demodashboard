@@ -6,6 +6,7 @@ import useConversationStore from "@/stores/useConversationStore";
 import { Item, processMessages } from "@/lib/assistant";
 import { CHARACTERS } from "@/config/constants";
 import { Menu, X } from "lucide-react";
+import InstructionsPopup from "./instructions-popup";
 
 export default function Assistant() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -42,6 +43,7 @@ export default function Assistant() {
 
   return (
     <div className="h-full flex relative">
+      <InstructionsPopup />
       {/* Mobile menu button */}
       <button 
         onClick={() => setIsSidebarOpen(true)}

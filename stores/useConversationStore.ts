@@ -23,16 +23,7 @@ interface ConversationState {
 }
 
 const initialCharacterState = (characterId: string) => ({
-  chatMessages: [
-    {
-      type: "message",
-      role: "assistant",
-      content: [{ 
-        type: "output_text", 
-        text: CHARACTERS[characterId].greeting 
-      }],
-    },
-  ],
+  chatMessages: [],
   conversationItems: [],
 });
 
@@ -46,7 +37,7 @@ const initialCharacters: Record<string, CharacterState> = Object.keys(CHARACTERS
 );
 
 const useConversationStore = create<ConversationState>((set, get) => ({
-  selectedCharacter: "linda_johnson", // Default to Linda
+  selectedCharacter: "emily_carter", // Default to Emily Carter
   characters: initialCharacters,
   
   setSelectedCharacter: (character) => set({ selectedCharacter: character }),
