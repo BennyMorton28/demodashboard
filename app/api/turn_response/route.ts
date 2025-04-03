@@ -5,9 +5,10 @@ import OpenAI from "openai";
 export async function POST(request: Request) {
   try {
     const { messages, tools } = await request.json();
-    console.log("Received messages:", messages);
+    console.log("1. Received messages:", messages);
 
     const openai = new OpenAI();
+    console.log("2. Making request to OpenAI with model:", MODEL);
 
     const events = await openai.responses.create({
       model: MODEL,
@@ -22,7 +23,7 @@ export async function POST(request: Request) {
       async start(controller) {
         try {
           for await (const event of events) {
-            // Sending all events to the client
+            // Format each event with type and data
             const data = JSON.stringify({
               event: event.type,
               data: event,
@@ -30,6 +31,7 @@ export async function POST(request: Request) {
             controller.enqueue(`data: ${data}\n\n`);
           }
           // End of stream
+          controller.enqueue(`data: [DONE]\n\n`);
           controller.close();
         } catch (error) {
           console.error("Error in streaming loop:", error);
@@ -38,12 +40,11 @@ export async function POST(request: Request) {
       },
     });
 
-    // Return the ReadableStream as SSE
     return new Response(stream, {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
-        Connection: "keep-alive",
+        "Connection": "keep-alive",
       },
     });
   } catch (error) {

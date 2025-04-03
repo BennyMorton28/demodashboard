@@ -56,6 +56,7 @@ export const handleTurn = async (
       return;
     }
 
+    console.log("Starting to read stream...");
     // Reader for streaming data
     const reader = response.body!.getReader();
     const decoder = new TextDecoder();
@@ -65,21 +66,34 @@ export const handleTurn = async (
     while (!done) {
       const { value, done: doneReading } = await reader.read();
       done = doneReading;
-      const chunkValue = decoder.decode(value);
-      buffer += chunkValue;
+      
+      if (value) {
+        const chunkValue = decoder.decode(value);
+        console.log("Raw chunk received:", chunkValue);
+        buffer += chunkValue;
 
-      const lines = buffer.split("\n\n");
-      buffer = lines.pop() || "";
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
 
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          const dataStr = line.slice(6);
-          if (dataStr === "[DONE]") {
-            done = true;
-            break;
+        for (const line of lines) {
+          console.log("Processing line:", line);
+          if (line.startsWith("data: ")) {
+            const dataStr = line.slice(6);
+            console.log("Data string:", dataStr);
+            if (dataStr === "[DONE]") {
+              console.log("Received [DONE] signal");
+              done = true;
+              break;
+            }
+            try {
+              const data = JSON.parse(dataStr);
+              console.log("Parsed data:", data);
+              onMessage(data);
+            } catch (e) {
+              console.error("Error parsing data:", e);
+              console.error("Problematic data string:", dataStr);
+            }
           }
-          const data = JSON.parse(dataStr);
-          onMessage(data);
         }
       }
     }
@@ -87,9 +101,16 @@ export const handleTurn = async (
     // Handle any remaining data in buffer
     if (buffer && buffer.startsWith("data: ")) {
       const dataStr = buffer.slice(6);
+      console.log("Processing remaining buffer:", dataStr);
       if (dataStr !== "[DONE]") {
-        const data = JSON.parse(dataStr);
-        onMessage(data);
+        try {
+          const data = JSON.parse(dataStr);
+          console.log("Parsed remaining data:", data);
+          onMessage(data);
+        } catch (e) {
+          console.error("Error parsing remaining data:", e);
+          console.error("Problematic remaining data string:", dataStr);
+        }
       }
     }
   } catch (error) {
@@ -120,31 +141,29 @@ export const processMessages = async () => {
     ...currentCharacter.conversationItems,
   ];
 
-  let assistantMessageContent = "";
-  let functionArguments = "";
+  // Track message content by ID
+  const messageContents = new Map<string, string>();
 
-  await handleTurn(allConversationItems, tools, async ({ event, data }) => {
+  await handleTurn(allConversationItems, tools, async (eventData) => {
+    const { event, data } = eventData;
+    console.log("Processing event:", event, data);
+
     switch (event) {
-      case "response.output_text.delta":
-      case "response.output_text.annotation.added": {
-        const { delta, item_id, annotation } = data;
+      case "response.output_text.delta": {
+        const { delta, item_id } = data;
+        
+        // Initialize or update the content for this message
+        const currentContent = messageContents.get(item_id) || "";
+        const newContent = currentContent + (delta || "");
+        messageContents.set(item_id, newContent);
 
-        console.log("event", data);
+        // Find or create message
+        let messageIndex = currentCharacter.chatMessages.findIndex(
+          (m) => m.type === "message" && m.id === item_id
+        );
 
-        let partial = "";
-        if (typeof delta === "string") {
-          partial = delta;
-        }
-        assistantMessageContent += partial;
-
-        // If the last message isn't an assistant message, create a new one
-        const lastItem = currentCharacter.chatMessages[currentCharacter.chatMessages.length - 1];
-        if (
-          !lastItem ||
-          lastItem.type !== "message" ||
-          lastItem.role !== "assistant" ||
-          (lastItem.id && lastItem.id !== item_id)
-        ) {
+        if (messageIndex === -1) {
+          // Create new message
           currentCharacter.chatMessages.push({
             type: "message",
             role: "assistant",
@@ -152,20 +171,18 @@ export const processMessages = async () => {
             content: [
               {
                 type: "output_text",
-                text: assistantMessageContent,
+                text: newContent,
               },
             ],
           } as MessageItem);
         } else {
-          const contentItem = lastItem.content[0];
-          if (contentItem && contentItem.type === "output_text") {
-            contentItem.text = assistantMessageContent;
-            if (annotation) {
-              contentItem.annotations = [
-                ...(contentItem.annotations ?? []),
-                annotation,
-              ];
-            }
+          // Update existing message
+          const message = currentCharacter.chatMessages[messageIndex];
+          if (message.type === "message") {
+            message.content[0] = {
+              type: "output_text",
+              text: newContent,
+            };
           }
         }
 
@@ -173,19 +190,36 @@ export const processMessages = async () => {
         break;
       }
 
+      case "response.output_text.annotation.added": {
+        const { item_id, annotation } = data;
+        const message = currentCharacter.chatMessages.find(
+          (m) => m.type === "message" && m.id === item_id
+        );
+        if (message && message.type === "message") {
+          const contentItem = message.content[0];
+          if (contentItem && contentItem.type === "output_text") {
+            contentItem.annotations = [
+              ...(contentItem.annotations ?? []),
+              annotation,
+            ];
+          }
+          setChatMessages([...currentCharacter.chatMessages]);
+        }
+        break;
+      }
+
       case "response.output_item.added": {
-        const { item } = data || {};
-        // New item coming in
+        const { item } = data;
         if (!item || !item.type) {
           break;
         }
-        // Handle differently depending on the item type
         switch (item.type) {
           case "message": {
-            const text = item.content?.text || "";
+            const text = item.content?.[0]?.text || "";
             currentCharacter.chatMessages.push({
               type: "message",
               role: "assistant",
+              id: item.id,
               content: [
                 {
                   type: "output_text",
@@ -207,14 +241,13 @@ export const processMessages = async () => {
             break;
           }
           case "function_call": {
-            functionArguments += item.arguments || "";
             currentCharacter.chatMessages.push({
               type: "tool_call",
               tool_type: "function_call",
               status: "in_progress",
               id: item.id,
-              name: item.name, // function name,e.g. "get_weather"
-              arguments: item.arguments || "",
+              name: item.name,
+              arguments: "",
               parsedArguments: {},
               output: null,
             });
@@ -245,35 +278,59 @@ export const processMessages = async () => {
         break;
       }
 
-      case "response.output_item.done": {
-        // After output item is done, adding tool call ID
-        const { item } = data || {};
+      case "response.completed": {
+        // Add the final message to conversation items
+        const lastMessage = currentCharacter.chatMessages[currentCharacter.chatMessages.length - 1];
+        if (lastMessage && lastMessage.type === "message") {
+          currentCharacter.conversationItems.push({
+            role: "assistant",
+            content: lastMessage.content,
+          });
+          setConversationItems([...currentCharacter.conversationItems]);
+        }
+        break;
+      }
 
-        const toolCallMessage = currentCharacter.chatMessages.find((m) => m.id === item.id);
-        if (toolCallMessage && toolCallMessage.type === "tool_call") {
-          toolCallMessage.call_id = item.call_id;
+      case "response.output_text.done": {
+        const { item_id, text } = data;
+        // Set the final text
+        messageContents.set(item_id, text);
+        
+        const message = currentCharacter.chatMessages.find(
+          (m) => m.type === "message" && m.id === item_id
+        );
+        if (message && message.type === "message") {
+          message.content = [
+            {
+              type: "output_text",
+              text: text,
+            },
+          ];
           setChatMessages([...currentCharacter.chatMessages]);
         }
-        currentCharacter.conversationItems.push(item);
-        setConversationItems([...currentCharacter.conversationItems]);
+        break;
       }
 
       case "response.function_call_arguments.delta": {
-        // Streaming arguments delta to show in the chat
-        functionArguments += data.delta || "";
-        let parsedFunctionArguments = {};
-        if (functionArguments.length > 0) {
-          parsedFunctionArguments = parse(functionArguments);
+        const { item_id, delta } = data;
+        // Initialize or update function arguments for this call
+        const currentArgs = messageContents.get(item_id) || "";
+        const newArgs = currentArgs + (delta || "");
+        messageContents.set(item_id, newArgs);
+        
+        let parsedArgs = {};
+        try {
+          if (newArgs.length > 0) {
+            parsedArgs = parse(newArgs);
+          }
+        } catch {
+          // partial JSON can fail parse; ignore
         }
 
-        const toolCallMessage = currentCharacter.chatMessages.find((m) => m.id === data.item_id);
+        const toolCallMessage = currentCharacter.chatMessages.find((m) => m.id === item_id);
         if (toolCallMessage && toolCallMessage.type === "tool_call") {
-          toolCallMessage.arguments = functionArguments;
-          try {
-            toolCallMessage.parsedArguments = parsedFunctionArguments;
-          } catch {
-            // partial JSON can fail parse; ignore
-          }
+          toolCallMessage.arguments = newArgs;
+          toolCallMessage.parsedArguments = parsedArgs;
           setChatMessages([...currentCharacter.chatMessages]);
         }
         break;
@@ -282,8 +339,6 @@ export const processMessages = async () => {
       case "response.function_call_arguments.done": {
         // This has the full final arguments string
         const { item_id, arguments: finalArgs } = data;
-
-        functionArguments = finalArgs;
 
         // Mark the tool_call as "completed" and parse the final JSON
         const toolCallMessage = currentCharacter.chatMessages.find((m) => m.id === item_id);
