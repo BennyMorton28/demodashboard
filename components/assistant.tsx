@@ -69,7 +69,7 @@ export default function Assistant() {
           </button>
         </div>
         <div className="h-full overflow-y-auto">
-          <CharacterSelector />
+          <CharacterSelector onClose={() => setIsSidebarOpen(false)} />
         </div>
       </div>
       
