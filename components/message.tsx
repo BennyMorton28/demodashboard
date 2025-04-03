@@ -4,8 +4,6 @@ import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 
 interface MessageProps {
@@ -31,7 +29,7 @@ const tailwindConfig = {
 const Message: React.FC<MessageProps> = ({ message }) => {
   const [displayedText, setDisplayedText] = useState("");
   const [isReady, setIsReady] = useState(false);
-  const [showCursor, setShowCursor] = useState(true);
+  const [showCursor, setShowCursor] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout>();
   const cursorIntervalRef = useRef<NodeJS.Timeout>();
@@ -90,28 +88,18 @@ const Message: React.FC<MessageProps> = ({ message }) => {
       return;
     }
 
-    // Clear any existing timeouts/intervals
+    // Clear any existing timeouts
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
     }
-    if (cursorIntervalRef.current) {
-      clearInterval(cursorIntervalRef.current);
-    }
 
-    // For user messages, show immediately without cursor
-    if (message.role === "user") {
+    // For user messages or previously displayed messages, show immediately
+    if (message.role === "user" || hasBeenDisplayedBefore()) {
       setDisplayedText(messageText);
-      setShowCursor(false);
       setIsThinking(false);
-      return;
-    }
-
-    // For previously displayed messages, show without animation
-    if (hasBeenDisplayedBefore()) {
-      setDisplayedText(messageText);
-      setShowCursor(false);
-      setIsThinking(false);
-      markAsDisplayed();
+      if (message.role !== "user") {
+        markAsDisplayed();
+      }
       return;
     }
     
@@ -119,55 +107,34 @@ const Message: React.FC<MessageProps> = ({ message }) => {
     setDisplayedText("");
     setIsReady(true);
     setIsThinking(true);
-    isTypingRef.current = false;
+    isTypingRef.current = true;
 
-    // Start cursor blinking - slower during thinking phase
-    cursorIntervalRef.current = setInterval(() => {
-      if (isThinking) {
-        setShowCursor(prev => !prev);
-      } else if (!isTypingRef.current) {
-        setShowCursor(prev => !prev);
-      } else {
-        setShowCursor(true);
-      }
-    }, isThinking ? 800 : 400);
-
-    // Start typing animation after thinking delay
+    // Start typing animation after a brief delay
     const startTyping = () => {
       setIsThinking(false);
-      let currentIndex = 0;
       let visibleIndex = 0;
-      isTypingRef.current = true;
       
-      // This function controls the visual animation speed
       const animateText = () => {
         if (visibleIndex < messageText.length) {
           setDisplayedText(messageText.slice(0, visibleIndex + 1));
           visibleIndex++;
-          timeoutRef.current = setTimeout(animateText, 35); // Slower visual typing speed (35ms per character)
+          timeoutRef.current = setTimeout(animateText, 0);
         } else {
           isTypingRef.current = false;
           markAsDisplayed();
-          if (cursorIntervalRef.current) {
-            clearInterval(cursorIntervalRef.current);
-          }
-          setShowCursor(false);
         }
       };
 
-      // Start the visual animation
+      // Start the animation immediately
       animateText();
     };
 
-    // Longer initial delay to show thinking state
-    timeoutRef.current = setTimeout(startTyping, 2000);
+    // Brief initial delay
+    timeoutRef.current = setTimeout(startTyping, 500);
 
     return () => {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
-      }
-      if (cursorIntervalRef.current) {
-        clearInterval(cursorIntervalRef.current);
       }
       isTypingRef.current = false;
       setIsThinking(false);
@@ -244,8 +211,7 @@ const Message: React.FC<MessageProps> = ({ message }) => {
           <div>
             <div className="ml-4 rounded-[16px] px-4 py-2 md:ml-24 bg-[#ededed] text-stone-900 font-normal font-sans text-lg">
               <ReactMarkdown
-                remarkPlugins={[remarkGfm, remarkMath]}
-                rehypePlugins={[rehypeKatex]}
+                remarkPlugins={[remarkGfm]}
                 components={MarkdownComponents}
               >
                 {messageText}
@@ -263,20 +229,12 @@ const Message: React.FC<MessageProps> = ({ message }) => {
         <div className="mr-4 rounded-[16px] px-4 py-2 md:mr-24 text-black bg-white font-normal font-sans text-lg">
           <div className="whitespace-pre-wrap break-words">
             {isReady && (
-              <>
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm, remarkMath]}
-                  rehypePlugins={[rehypeKatex]}
-                  components={MarkdownComponents}
-                >
-                  {displayedText}
-                </ReactMarkdown>
-                {showCursor && (
-                  <span 
-                    className="inline-block w-[6px] h-[1.2em] bg-black animate-pulse"
-                  />
-                )}
-              </>
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={MarkdownComponents}
+              >
+                {displayedText}
+              </ReactMarkdown>
             )}
           </div>
         </div>

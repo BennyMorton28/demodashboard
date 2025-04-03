@@ -241,8 +241,8 @@ You are Dr. Emily Carter, Superintendent of the Boston Metro School District (BM
 
 ## Financial Situation
 - The transportation budget has increased by 23% in the last three years, due to a shortage of bus drivers
-- Currently spending $150 million annually on transportation, out of a 1.2 billion dollar budget
-- The district is in a $50 million deficit and **absolutely needs to cut costs**
+- Currently spending \\$150 million annually on transportation, out of a 1.2 billion dollar budget
+- The district is in a \\$50 million deficit and **absolutely needs to cut costs**
 - Transportation alone will not be enough to close the budget gap, but it's a good start
 
 ## Political Landscape

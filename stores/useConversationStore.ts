@@ -1,7 +1,11 @@
 import { create } from "zustand";
 import { Item } from "@/lib/assistant";
 import { ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import { INITIAL_MESSAGE, CHARACTERS } from "@/config/constants";
+import { CHARACTERS } from "@/config/constants";
+import { persist, createJSONStorage } from "zustand/middleware";
+
+// Generate a new ID for each app load/build
+const BUILD_ID = Date.now().toString();
 
 interface CharacterState {
   chatMessages: Item[];
@@ -10,6 +14,7 @@ interface CharacterState {
 }
 
 interface ConversationState {
+  buildId: string;
   selectedCharacter: string;
   characters: Record<string, CharacterState>;
   setSelectedCharacter: (character: string) => void;
@@ -19,6 +24,7 @@ interface ConversationState {
   addConversationItem: (message: ChatCompletionMessageParam) => void;
   setLastResponseId: (responseId: string) => void;
   clearConversation: () => void;
+  clearAllConversations: () => void;
   rawSet: (state: any) => void;
 }
 
@@ -36,76 +42,102 @@ const initialCharacters: Record<string, CharacterState> = Object.keys(CHARACTERS
   {}
 );
 
-const useConversationStore = create<ConversationState>((set, get) => ({
-  selectedCharacter: "emily_carter", // Default to Emily Carter
+// Initial state creator
+const createInitialState = () => ({
+  buildId: BUILD_ID,
+  selectedCharacter: "emily_carter",
   characters: initialCharacters,
-  
-  setSelectedCharacter: (character) => set({ selectedCharacter: character }),
-  
-  setChatMessages: (items) =>
-    set((state) => ({
-      characters: {
-        ...state.characters,
-        [state.selectedCharacter]: {
-          ...state.characters[state.selectedCharacter],
-          chatMessages: items,
-        },
-      },
-    })),
-    
-  setConversationItems: (messages) =>
-    set((state) => ({
-      characters: {
-        ...state.characters,
-        [state.selectedCharacter]: {
-          ...state.characters[state.selectedCharacter],
-          conversationItems: messages,
-        },
-      },
-    })),
-    
-  addChatMessage: (item) =>
-    set((state) => ({
-      characters: {
-        ...state.characters,
-        [state.selectedCharacter]: {
-          ...state.characters[state.selectedCharacter],
-          chatMessages: [...state.characters[state.selectedCharacter].chatMessages, item],
-        },
-      },
-    })),
-    
-  addConversationItem: (message) =>
-    set((state) => ({
-      characters: {
-        ...state.characters,
-        [state.selectedCharacter]: {
-          ...state.characters[state.selectedCharacter],
-          conversationItems: [...state.characters[state.selectedCharacter].conversationItems, message],
-        },
-      },
-    })),
+});
 
-  setLastResponseId: (responseId) =>
-    set((state) => ({
-      characters: {
-        ...state.characters,
-        [state.selectedCharacter]: {
-          ...state.characters[state.selectedCharacter],
-          lastResponseId: responseId,
-        },
-      },
-    })),
+// Clear any existing storage on initial load
+if (typeof window !== 'undefined') {
+  localStorage.removeItem('conversation-storage');
+}
 
-  clearConversation: () =>
-    set((state) => ({
-      characters: {
-        ...state.characters,
-        [state.selectedCharacter]: { ...initialCharacterState(state.selectedCharacter) },
-      },
-    })),
+const useConversationStore = create<ConversationState>()(
+  persist(
+    (set, get) => ({
+      ...createInitialState(),
+      
+      setSelectedCharacter: (character) => set({ selectedCharacter: character }),
+      
+      setChatMessages: (items) =>
+        set((state) => ({
+          characters: {
+            ...state.characters,
+            [state.selectedCharacter]: {
+              ...state.characters[state.selectedCharacter],
+              chatMessages: items,
+            },
+          },
+        })),
+        
+      setConversationItems: (messages) =>
+        set((state) => ({
+          characters: {
+            ...state.characters,
+            [state.selectedCharacter]: {
+              ...state.characters[state.selectedCharacter],
+              conversationItems: messages,
+            },
+          },
+        })),
+        
+      addChatMessage: (item) =>
+        set((state) => ({
+          characters: {
+            ...state.characters,
+            [state.selectedCharacter]: {
+              ...state.characters[state.selectedCharacter],
+              chatMessages: [...state.characters[state.selectedCharacter].chatMessages, item],
+            },
+          },
+        })),
+        
+      addConversationItem: (message) =>
+        set((state) => ({
+          characters: {
+            ...state.characters,
+            [state.selectedCharacter]: {
+              ...state.characters[state.selectedCharacter],
+              conversationItems: [...state.characters[state.selectedCharacter].conversationItems, message],
+            },
+          },
+        })),
 
-  rawSet: set,
-}));
+      setLastResponseId: (responseId) =>
+        set((state) => ({
+          characters: {
+            ...state.characters,
+            [state.selectedCharacter]: {
+              ...state.characters[state.selectedCharacter],
+              lastResponseId: responseId,
+            },
+          },
+        })),
+
+      clearConversation: () =>
+        set((state) => ({
+          characters: {
+            ...state.characters,
+            [state.selectedCharacter]: { ...initialCharacterState(state.selectedCharacter) },
+          },
+        })),
+
+      clearAllConversations: () => set(createInitialState()),
+
+      rawSet: set,
+    }),
+    {
+      name: 'conversation-storage',
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        buildId: state.buildId,
+        selectedCharacter: state.selectedCharacter,
+        characters: state.characters,
+      }),
+    }
+  )
+);
 
 export default useConversationStore;
