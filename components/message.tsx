@@ -12,10 +12,31 @@ interface MessageProps {
   message: MessageItem;
 }
 
+const tailwindConfig = {
+  theme: {
+    extend: {
+      animation: {
+        pulse: 'pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+      },
+      keyframes: {
+        pulse: {
+          '0%, 100%': { opacity: '1' },
+          '50%': { opacity: '0' },
+        },
+      },
+    },
+  },
+};
+
 const Message: React.FC<MessageProps> = ({ message }) => {
   const [displayedText, setDisplayedText] = useState("");
   const [isReady, setIsReady] = useState(false);
+  const [showCursor, setShowCursor] = useState(true);
+  const [isThinking, setIsThinking] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout>();
+  const cursorIntervalRef = useRef<NodeJS.Timeout>();
+  const isTypingRef = useRef(false);
+  const cursorPositionRef = useRef<HTMLSpanElement>(null);
   
   // Generate a unique ID for the message based on its content
   const getMessageId = () => {
@@ -40,7 +61,7 @@ const Message: React.FC<MessageProps> = ({ message }) => {
       return "";
     }
 
-    const content = message.content[0];
+    const content = message.content[0] as string | { text?: string; type?: string };
     
     if (typeof content === "string") {
       return content.trim();
@@ -66,49 +87,90 @@ const Message: React.FC<MessageProps> = ({ message }) => {
   useEffect(() => {
     if (!messageText) {
       setDisplayedText("");
-      setIsReady(false);
       return;
     }
 
+    // Clear any existing timeouts/intervals
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
     }
+    if (cursorIntervalRef.current) {
+      clearInterval(cursorIntervalRef.current);
+    }
 
-    if (message.role === "user" || hasBeenDisplayedBefore()) {
-      // For user messages or already displayed messages, show immediately
+    // For user messages, show immediately without cursor
+    if (message.role === "user") {
       setDisplayedText(messageText);
-      setIsReady(true);
+      setShowCursor(false);
+      setIsThinking(false);
+      return;
+    }
+
+    // For previously displayed messages, show without animation
+    if (hasBeenDisplayedBefore()) {
+      setDisplayedText(messageText);
+      setShowCursor(false);
+      setIsThinking(false);
       markAsDisplayed();
       return;
     }
     
-    // Clear any existing text and wait before starting
+    // Reset state for new message
     setDisplayedText("");
-    setIsReady(false);
+    setIsReady(true);
+    setIsThinking(true);
+    isTypingRef.current = false;
 
-    // Add a small delay before starting to prevent flashing
-    timeoutRef.current = setTimeout(() => {
-      setIsReady(true);
+    // Start cursor blinking - slower during thinking phase
+    cursorIntervalRef.current = setInterval(() => {
+      if (isThinking) {
+        setShowCursor(prev => !prev);
+      } else if (!isTypingRef.current) {
+        setShowCursor(prev => !prev);
+      } else {
+        setShowCursor(true);
+      }
+    }, isThinking ? 800 : 400);
+
+    // Start typing animation after thinking delay
+    const startTyping = () => {
+      setIsThinking(false);
       let currentIndex = 0;
+      let visibleIndex = 0;
+      isTypingRef.current = true;
       
-      const streamText = () => {
-        if (currentIndex < messageText.length) {
-          setDisplayedText(messageText.slice(0, currentIndex + 1));
-          currentIndex++;
-          timeoutRef.current = setTimeout(streamText, 10);
+      // This function controls the visual animation speed
+      const animateText = () => {
+        if (visibleIndex < messageText.length) {
+          setDisplayedText(messageText.slice(0, visibleIndex + 1));
+          visibleIndex++;
+          timeoutRef.current = setTimeout(animateText, 35); // Slower visual typing speed (35ms per character)
         } else {
+          isTypingRef.current = false;
           markAsDisplayed();
+          if (cursorIntervalRef.current) {
+            clearInterval(cursorIntervalRef.current);
+          }
+          setShowCursor(false);
         }
       };
 
-      streamText();
-    }, 100);
+      // Start the visual animation
+      animateText();
+    };
+
+    // Longer initial delay to show thinking state
+    timeoutRef.current = setTimeout(startTyping, 2000);
 
     return () => {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }
-      setIsReady(false);
+      if (cursorIntervalRef.current) {
+        clearInterval(cursorIntervalRef.current);
+      }
+      isTypingRef.current = false;
+      setIsThinking(false);
     };
   }, [messageText, message.role]);
 
@@ -157,10 +219,14 @@ const Message: React.FC<MessageProps> = ({ message }) => {
     },
     blockquote({ children }: any) {
       return (
-        <blockquote className="border-l-4 border-gray-200 pl-4 my-4 italic">
+        <blockquote className="border-l-4 border-gray-200 pl-4 my-4">
           {children}
         </blockquote>
       );
+    },
+    em({ children }: any) {
+      // Render emphasized text (italics) as normal text
+      return <span>{children}</span>;
     },
     a({ children, href }: any) {
       return (
@@ -195,15 +261,24 @@ const Message: React.FC<MessageProps> = ({ message }) => {
     <div className="text-base">
       <div className="flex">
         <div className="mr-4 rounded-[16px] px-4 py-2 md:mr-24 text-black bg-white font-normal font-sans text-lg">
-          {isReady && (
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm, remarkMath]}
-              rehypePlugins={[rehypeKatex]}
-              components={MarkdownComponents}
-            >
-              {displayedText}
-            </ReactMarkdown>
-          )}
+          <div className="whitespace-pre-wrap break-words">
+            {isReady && (
+              <>
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm, remarkMath]}
+                  rehypePlugins={[rehypeKatex]}
+                  components={MarkdownComponents}
+                >
+                  {displayedText}
+                </ReactMarkdown>
+                {showCursor && (
+                  <span 
+                    className="inline-block w-[6px] h-[1.2em] bg-black animate-pulse"
+                  />
+                )}
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -14,6 +14,12 @@ export interface Character {
 }
 
 export const CHARACTERS: Record<string, Character> = {
+  emily_carter: {
+    name: "Dr. Emily Carter",
+    title: "Superintendent",
+    greeting: "Hello, I'm Dr. Emily Carter, Superintendent of BMSD. I'm committed to finding sustainable solutions to our transportation crisis while maintaining our district's commitment to educational equity. I'm here to discuss our challenges and explore potential paths forward.",
+    prompt: EMILY_CARTER_PROMPT
+  },
   linda_johnson: {
     name: "Ms. Linda Johnson",
     title: "Bus Driver",
@@ -37,12 +43,6 @@ export const CHARACTERS: Record<string, Character> = {
     title: "Chief Financial Officer",
     greeting: "Hello, I'm James Thompson, CFO of BMSD. I'm responsible for managing our district's finances and understanding the full scope of our transportation budget crisis. I'm here to provide insights into our financial situation and discuss potential solutions.",
     prompt: JAMES_THOMPSON_PROMPT
-  },
-  emily_carter: {
-    name: "Dr. Emily Carter",
-    title: "Superintendent",
-    greeting: "Hello, I'm Dr. Emily Carter, Superintendent of BMSD. I'm committed to finding sustainable solutions to our transportation crisis while maintaining our district's commitment to educational equity. I'm here to discuss our challenges and explore potential paths forward.",
-    prompt: EMILY_CARTER_PROMPT
   }
 };
 
