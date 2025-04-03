@@ -2,11 +2,16 @@ import React from 'react';
 import { CHARACTERS } from '@/config/constants';
 import useConversationStore from '@/stores/useConversationStore';
 
-export default function CharacterSelector() {
+interface CharacterSelectorProps {
+  onClose: () => void;
+}
+
+export default function CharacterSelector({ onClose }: CharacterSelectorProps) {
   const { selectedCharacter, setSelectedCharacter, clearConversation } = useConversationStore();
 
   const handleCharacterChange = (characterId: string) => {
     setSelectedCharacter(characterId);
+    onClose();
   };
 
   return (
@@ -29,7 +34,10 @@ export default function CharacterSelector() {
         ))}
       </div>
       <button
-        onClick={clearConversation}
+        onClick={() => {
+          clearConversation();
+          onClose();
+        }}
         className="mt-4 px-4 py-2 text-sm text-red-600 hover:text-red-700 hover:bg-red-50 rounded"
       >
         Clear Conversation
