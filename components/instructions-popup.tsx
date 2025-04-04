@@ -3,29 +3,26 @@ import { X, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const instructions = [
   {
-    title: "Welcome to BMSD Case Study",
-    content: "This interactive case study allows you to explore the transportation challenges facing BMSD through conversations with key stakeholders. You'll be able to understand different perspectives and work towards finding solutions."
+    title: "Welcome to Knowledge Assistant",
+    content: "This interactive assistant allows you to explore knowledge while interacting with an AI helper. The interface is designed to be intuitive and user-friendly."
   },
   {
     title: "How to Use This Tool",
-    content: "Start by chatting with Dr. Emily Carter, our Superintendent, who will provide an overview of the situation. You can then switch between different stakeholders using the character selector to understand their unique perspectives."
+    content: "Use the chat panel on the left to ask questions about the content displayed on the right. The AI will provide relevant information based on your queries."
   },
   {
-    title: "Key Stakeholders",
-    content: "You can interact with:\n- Dr. Emily Carter (Superintendent)\n- Ms. Sarah Lee (Chief Operations Officer)\n- Mr. James Thompson (CFO)\n- Mr. David Rodriguez (Principal)\n- Ms. Linda Johnson (Bus Driver)"
+    title: "Content Navigation",
+    content: "You can navigate between different content sections using the tabs at the top of the right panel. Each section contains information on different topics."
   },
   {
-    title: "Making Progress",
-    content: "Ask questions about their concerns, challenges, and proposed solutions. Each stakeholder has unique insights that will help you understand the full scope of the transportation crisis."
-  },
-  {
-    title: "Getting Started",
-    content: "Begin by asking Dr. Carter about the current state of BMSD's transportation system. She can provide context about the challenges and help guide your investigation."
+    title: "Getting Help",
+    content: "If you're not sure what to ask, you can use the suggested conversation starters or simply ask the AI for help navigating the content."
   }
 ];
 
 export default function InstructionsPopup() {
-  const [isOpen, setIsOpen] = useState(true);
+  // Set isOpen to false by default to prevent popup from showing
+  const [isOpen, setIsOpen] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
 
   if (!isOpen) return null;

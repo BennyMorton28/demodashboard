@@ -3,8 +3,17 @@ import React, { useState } from "react";
 import Chat from "./chat";
 import { Item } from "@/lib/assistant";
 
-export default function Assistant() {
-  const [messages, setMessages] = useState<Item[]>([]);
+export default function KaiAssistant() {
+  const [messages, setMessages] = useState<Item[]>([
+    {
+      type: "message",
+      role: "assistant",
+      content: [{ 
+        type: "input_text", 
+        text: "Hello! I'm Kai, Kellogg's AI assistant. I'm here to help with any questions about Kellogg School of Management programs, career advice, course selection, or general guidance for Kellogg students. How can I assist you today?" 
+      }],
+    }
+  ]);
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSendMessage = async (message: string) => {
@@ -22,7 +31,7 @@ export default function Assistant() {
       setMessages(prev => [...prev, userItem]);
       
       // Call our API endpoint
-      const response = await fetch('/api/chat', {
+      const response = await fetch('/api/kai-chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -66,14 +75,22 @@ export default function Assistant() {
     }
   };
 
+  // Sample conversation starters specific to Kellogg
+  const kaiStarters = [
+    "Can you tell me about Kellogg's MBA programs?",
+    "What are some career paths for Kellogg graduates?",
+    "How should I prepare for recruiting season?",
+    "What electives would you recommend for someone interested in marketing?"
+  ];
+
   return (
     <div className="h-full flex relative">
       {/* Chat Section */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Assistant Info Header */}
         <div className="px-4 py-3 border-b border-gray-200 bg-white">
-          <h2 className="text-lg font-semibold">Knowledge Assistant</h2>
-          <p className="text-sm text-gray-600">Ask me anything about the displayed content</p>
+          <h2 className="text-lg font-semibold">Kai (Kellogg AI)</h2>
+          <p className="text-sm text-gray-600">Your personal Kellogg School of Management assistant</p>
         </div>
         
         {/* Chat Component */}
@@ -82,9 +99,10 @@ export default function Assistant() {
             items={messages} 
             onSendMessage={handleSendMessage}
             isLoading={isLoading}
+            starters={kaiStarters}
           />
         </div>
       </div>
     </div>
   );
-}
+} 
