@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import Chat from "./chat";
 import { Item } from "@/lib/assistant";
 
@@ -20,6 +20,100 @@ export default function KaiAssistant() {
   const [debugInfo, setDebugInfo] = useState('');
   const [apiKeyStatus, setApiKeyStatus] = useState<{status: string, details?: any} | null>(null);
   const [showDebug, setShowDebug] = useState(false);
+  
+  // Add a buffer and timer for smoothing out state updates
+  const bufferTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastUpdateTimeRef = useRef<number>(0);
+  const UPDATE_INTERVAL_MS = 50; // Update UI at most every 50ms
+
+  // Add a buffer size threshold before showing any text
+  const INITIAL_BUFFER_SIZE = 20; // Only start showing text once we have at least 20 chars
+  const hasStartedStreamingRef = useRef(false);
+
+  // Function to update message content with rate limiting
+  const updateMessageContent = (text: string, messageId: string) => {
+    const now = Date.now();
+    
+    // Don't display text until we have enough content to buffer
+    if (!hasStartedStreamingRef.current && text.length < INITIAL_BUFFER_SIZE) {
+      console.log(`Buffering initial text: ${text.length} chars (waiting for ${INITIAL_BUFFER_SIZE})`);
+      return; // Don't update the UI yet
+    }
+    
+    // Once we have enough text, mark as started so future updates happen immediately
+    if (!hasStartedStreamingRef.current && text.length >= INITIAL_BUFFER_SIZE) {
+      console.log(`Buffer threshold reached (${text.length} chars), starting to display text`);
+      hasStartedStreamingRef.current = true;
+    }
+    
+    // Rest of the update function with rate limiting
+    // If we recently updated, schedule an update for later
+    if (now - lastUpdateTimeRef.current < UPDATE_INTERVAL_MS) {
+      // Clear existing timeout if there is one
+      if (bufferTimeoutRef.current) {
+        clearTimeout(bufferTimeoutRef.current);
+      }
+      
+      // Schedule a new update
+      bufferTimeoutRef.current = setTimeout(() => {
+        lastUpdateTimeRef.current = Date.now();
+        bufferTimeoutRef.current = null;
+        
+        // Do the actual update
+        setMessages(prev => {
+          // Create a deep copy to avoid mutation
+          const newMessages = JSON.parse(JSON.stringify(prev));
+          const index = newMessages.findIndex(
+            (m: any) => m.type === 'message' && m.role === 'assistant' && m.id === messageId
+          );
+          
+          if (index !== -1) {
+            const assistantMessage = newMessages[index];
+            if (assistantMessage.type === 'message') {
+              assistantMessage.content = [{
+                type: 'output_text',
+                text: text
+              }];
+            }
+          }
+          
+          return newMessages;
+        });
+      }, UPDATE_INTERVAL_MS);
+    } else {
+      // It's been long enough since our last update, do it immediately
+      lastUpdateTimeRef.current = now;
+      
+      setMessages(prev => {
+        // Create a deep copy to avoid mutation
+        const newMessages = JSON.parse(JSON.stringify(prev));
+        const index = newMessages.findIndex(
+          (m: any) => m.type === 'message' && m.role === 'assistant' && m.id === messageId
+        );
+        
+        if (index !== -1) {
+          const assistantMessage = newMessages[index];
+          if (assistantMessage.type === 'message') {
+            assistantMessage.content = [{
+              type: 'output_text',
+              text: text
+            }];
+          }
+        }
+        
+        return newMessages;
+      });
+    }
+  };
+
+  // Clean up any pending timeouts when component unmounts
+  useEffect(() => {
+    return () => {
+      if (bufferTimeoutRef.current) {
+        clearTimeout(bufferTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Helper function to extract delta text from different possible structures
   const extractDeltaText = (parsedData: any): string => {
@@ -108,6 +202,9 @@ export default function KaiAssistant() {
 
     try {
       setIsLoading(true);
+      // Reset streaming flag for new message
+      hasStartedStreamingRef.current = false;
+      
       // Add user message to the list
       setMessages(prev => [...prev, userItem]);
       
@@ -180,120 +277,88 @@ export default function KaiAssistant() {
         
         // Process chunk more carefully, in case it's split across multiple 'data:' lines
         try {
-          // Split the chunk into lines, but handle the case where a message might be split
-          // across multiple chunks by keeping track of incomplete lines
-          const lines = chunk.split('\n\n');
-          setDebugInfo(prev => prev + `\nFound ${lines.length} lines in chunk`);
+          // Split the chunk by data: but keep track of partial chunks
+          let processedChunk = chunk;
+          let partialLine = '';
           
-          for (const line of lines) {
-            if (!line.trim()) continue; // Skip empty lines
+          // Check if the chunk starts with a partial line (no 'data: ' prefix)
+          if (!chunk.trimStart().startsWith('data: ')) {
+            console.log("Found partial chunk at start, buffering");
+            setDebugInfo(prev => prev + '\nBuffering partial chunk start');
+            partialLine = chunk;
+            continue; // Skip to next chunk
+          }
+          
+          // Handle multiple data: events in a single chunk
+          const dataEvents = processedChunk.split('data: ');
+          // Filter out empty strings (from the split)
+          const validEvents = dataEvents.filter(event => event.trim().length > 0);
+          
+          setDebugInfo(prev => prev + `\nFound ${validEvents.length} data events in chunk`);
+          
+          for (const eventData of validEvents) {
+            // Clean up the event data by removing any trailing newlines
+            const cleanEventData = eventData.replace(/\n\n$/, '');
             
-            if (line.startsWith('data: ')) {
-              const eventData = line.slice(6);
+            // Handle end of stream
+            if (cleanEventData === '[DONE]') {
+              console.log("Received [DONE] event");
+              setDebugInfo(prev => prev + '\nReceived [DONE] event');
+              setIsLoading(false);
+              continue;
+            }
+            
+            try {
+              // Parse the event data
+              const parsedData = JSON.parse(cleanEventData);
+              console.log("Event type:", parsedData.event);
+              setDebugInfo(prev => prev + `\nEvent: ${parsedData.event}`);
               
-              // Handle end of stream
-              if (eventData === '[DONE]') {
-                console.log("Received [DONE] event");
-                setDebugInfo(prev => prev + '\nReceived [DONE] event');
-                setIsLoading(false);
-                break;
-              }
-              
-              try {
-                // Parse the event data
-                const parsedData = JSON.parse(eventData);
-                console.log("Event type:", parsedData.event);
-                setDebugInfo(prev => prev + `\nEvent: ${parsedData.event}`);
-                
-                // Handle text events
-                if (parsedData.event === 'response.output_text.delta') {
-                  try {
-                    // Try to extract delta text with our helper function
-                    const textDelta = extractDeltaText(parsedData);
-                    
-                    if (textDelta) {
-                      responseTextRef.current += textDelta;
-                      console.log("Text delta received:", textDelta);
-                      setDebugInfo(prev => prev + `\nDelta: "${textDelta}"`);
-                      
-                      // Update the message with the latest text
-                      setMessages(prev => {
-                        const newMessages = [...prev];
-                        const assistantMessageIndex = newMessages.findIndex(
-                          msg => msg.type === 'message' && msg.role === 'assistant' && msg.id === responseIdRef.current
-                        );
-                        
-                        if (assistantMessageIndex !== -1) {
-                          const assistantMessage = newMessages[assistantMessageIndex];
-                          if (assistantMessage.type === 'message') {
-                            assistantMessage.content = [{
-                              type: 'output_text',
-                              text: responseTextRef.current
-                            }];
-                          }
-                        } else {
-                          console.log("Could not find assistant message with ID:", responseIdRef.current);
-                          // Safely access properties that might not exist
-                          const messageInfo = newMessages.map(m => {
-                            let info = m.type || 'unknown-type';
-                            if (m.type === 'message' && 'role' in m) info += `:${m.role}`;
-                            if ('id' in m) info += `:${m.id}`;
-                            return info;
-                          }).join(', ');
-                          console.log("Available messages:", messageInfo);
-                        }
-                        
-                        return newMessages;
-                      });
-                    } else {
-                      console.warn("Text delta is empty or undefined");
-                      setDebugInfo(prev => prev + '\nWarning: Empty text delta');
-                    }
-                  } catch (deltaError) {
-                    console.error("Error processing delta:", deltaError);
-                    setDebugInfo(prev => prev + '\nError processing delta: ' + String(deltaError));
-                  }
-                }
-              } catch (e) {
-                console.error('Error parsing event data:', e);
-                console.error('Problematic data:', line);
-                setDebugInfo(prev => prev + '\nError parsing data: ' + String(e));
-                
-                // Try to recover from parsing errors by checking if it's a large chunk that might be truncated
-                if (line.length > 10000) {
-                  console.log("Large line detected, possible truncation. Adding partial content...");
+              // Handle text events
+              if (parsedData.event === 'response.output_text.delta') {
+                try {
+                  // Try to extract delta text with our helper function
+                  const textDelta = extractDeltaText(parsedData);
                   
-                  // Just use whatever text we can safely extract
-                  try {
-                    // Look for any content between quotes after "delta"
-                    const deltaMatch = line.match(/"delta"\s*:\s*"([^"]+)/);
-                    if (deltaMatch && deltaMatch[1]) {
-                      const partialText = deltaMatch[1];
-                      responseTextRef.current += partialText + " [...truncated...]";
-                      
-                      // Update the message with the partial content
-                      setMessages(prev => {
-                        const newMessages = [...prev];
-                        const assistantMessageIndex = newMessages.findIndex(
-                          msg => msg.type === 'message' && msg.role === 'assistant' && msg.id === responseIdRef.current
-                        );
-                        
-                        if (assistantMessageIndex !== -1) {
-                          const assistantMessage = newMessages[assistantMessageIndex];
-                          if (assistantMessage.type === 'message') {
-                            assistantMessage.content = [{
-                              type: 'output_text',
-                              text: responseTextRef.current
-                            }];
-                          }
-                        }
-                        
-                        return newMessages;
-                      });
-                    }
-                  } catch (recoveryError) {
-                    console.error("Failed to recover from parsing error:", recoveryError);
+                  if (textDelta) {
+                    // Append the new text to our reference
+                    responseTextRef.current += textDelta;
+                    console.log("Text delta received:", textDelta);
+                    setDebugInfo(prev => prev + `\nDelta: "${textDelta}"`);
+                    
+                    // Update the message with the latest text
+                    updateMessageContent(responseTextRef.current, responseIdRef.current);
+                  } else {
+                    console.warn("Text delta is empty or undefined");
+                    setDebugInfo(prev => prev + '\nWarning: Empty text delta');
                   }
+                } catch (deltaError) {
+                  console.error("Error processing delta:", deltaError);
+                  setDebugInfo(prev => prev + '\nError processing delta: ' + String(deltaError));
+                }
+              }
+            } catch (e) {
+              console.error('Error parsing event data:', e);
+              console.error('Problematic data:', cleanEventData);
+              setDebugInfo(prev => prev + '\nError parsing data: ' + String(e));
+              
+              // Try to recover from parsing errors by checking if it's a large chunk that might be truncated
+              if (cleanEventData.length > 10000) {
+                console.log("Large line detected, possible truncation. Adding partial content...");
+                
+                // Just use whatever text we can safely extract
+                try {
+                  // Look for any content between quotes after "delta"
+                  const deltaMatch = cleanEventData.match(/"delta"\s*:\s*"([^"]+)/);
+                  if (deltaMatch && deltaMatch[1]) {
+                    const partialText = deltaMatch[1];
+                    responseTextRef.current += partialText + " [...truncated...]";
+                    
+                    // Update the message with the partial content
+                    updateMessageContent(responseTextRef.current, responseIdRef.current);
+                  }
+                } catch (recoveryError) {
+                  console.error("Failed to recover from parsing error:", recoveryError);
                 }
               }
             }
