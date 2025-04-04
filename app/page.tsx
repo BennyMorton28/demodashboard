@@ -39,6 +39,13 @@ const demoCards: DemoCard[] = [
     icon: "/icons/kai.svg",
     path: "/demos/kai"
   },
+  {
+    id: "streaming-api",
+    title: "OpenAI Streaming API",
+    description: "See how streaming responses work in real-time with the OpenAI API.",
+    icon: "/icons/streaming-api.svg",
+    path: "/demos/streaming-api"
+  },
   // Add more demo cards here as you create them
   {
     id: "coming-soon-1",

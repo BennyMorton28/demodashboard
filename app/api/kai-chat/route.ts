@@ -1,41 +1,50 @@
 import { NextResponse } from 'next/server';
-import { KAI_PROMPT, getCustomizedKaiPrompt } from '@/lib/kai-prompt';
+import { KAI_PROMPT } from '@/lib/kai-prompt';
+import OpenAI from 'openai';
 
-// Simple response generator function - in a real app, this would call an AI service with Kai's prompt
-function generateKaiResponse(message: string): string {
-  // List of possible responses based on keywords
-  const responses = [
-    {
-      keywords: ['hello', 'hi', 'hey', 'greetings'],
-      response: 'Hello there! I\'m Kai, your Kellogg AI assistant. How can I help you with Kellogg-related questions today?'
-    },
-    {
-      keywords: ['mba', 'program', 'degree', 'programs'],
-      response: 'Kellogg offers several MBA programs, including the Full-Time MBA, Evening & Weekend MBA, Executive MBA, and MMM Program (dual-degree MBA and MS in Design Innovation). Each program is designed to fit different career stages and goals. Would you like more specific information about any of these programs?'
-    },
-    {
-      keywords: ['career', 'job', 'recruiting', 'employment', 'hire'],
-      response: 'Kellogg graduates pursue diverse career paths, with many going into consulting, technology, finance, and marketing. Our Career Management Center provides personalized coaching, recruiter connections, and resources to help you achieve your career goals. For recruiting preparation, I recommend starting early by networking, attending company presentations, and working with career coaches on your resume and interview skills.'
-    },
-    {
-      keywords: ['course', 'classes', 'elective', 'curriculum', 'marketing'],
-      response: 'For students interested in marketing, Kellogg offers excellent electives like Consumer Behavior, Marketing Analytics, Brand Strategy, and Digital Marketing Strategies. These courses would provide both strategic and tactical marketing knowledge. I\'d recommend speaking with a student advisor to align these with your specific career goals.'
-    },
-    {
-      keywords: ['clubs', 'activities', 'extracurricular', 'groups'],
-      response: 'Kellogg has over 100 student clubs and organizations, ranging from professional interests (Consulting Club, Marketing Club, Tech Club) to cultural, athletic, and special interest groups. Getting involved in clubs is one of the best ways to build your network and develop leadership skills during your time at Kellogg.'
-    }
-  ];
+// Log detailed OpenAI configuration information
+console.log("KAI-CHAT CONFIG INFO:");
+console.log(`- OPENAI_ORG_ID from env: "${process.env.OPENAI_ORG_ID}"`);
+if (process.env.OPENAI_API_KEY) {
+  const apiKeyPrefix = process.env.OPENAI_API_KEY.substring(0, 10);
+  console.log(`- OPENAI_API_KEY from env: "${apiKeyPrefix}..." (length: ${process.env.OPENAI_API_KEY.length})`);
+} else {
+  console.log(`- OPENAI_API_KEY from env: Not set`);
+}
 
-  // Check if the message contains any keywords
-  for (const item of responses) {
-    if (item.keywords.some(keyword => message.toLowerCase().includes(keyword))) {
-      return item.response;
-    }
+// Create an OpenAI client instance with API key and organization ID
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+  organization: process.env.OPENAI_ORG_ID, // Your OpenAI organization ID
+});
+
+// Debug info - Inspect the actual configuration the OpenAI client is using
+console.log(`- OpenAI client config organization value: "${openai.organization || 'Not explicitly set'}"`);
+
+// Test API key function
+async function testOpenAIApiKey() {
+  try {
+    console.log("Testing OpenAI API key...");
+    const models = await openai.models.list();
+    console.log(`✅ API key is working! Found ${models.data.length} models.`);
+    console.log(`Organization ID: ${process.env.OPENAI_ORG_ID || 'Not specified'}`);
+    return true;
+  } catch (error: any) {
+    console.error("❌ API key validation failed:", error.message);
+    if (error.status) console.error(`Status code: ${error.status}`);
+    return false;
   }
+}
 
-  // Default response if no keywords match
-  return `That's a great question about Kellogg. While I'm just a demo, a real implementation would provide detailed information about Kellogg programs, career support, courses, and student life. Is there something specific about Kellogg you'd like to know?`;
+// Run test on startup
+testOpenAIApiKey().catch(err => console.error("API key test error:", err));
+
+// Log API key info (but not the full key for security)
+if (process.env.OPENAI_API_KEY) {
+  const keyPrefix = process.env.OPENAI_API_KEY.substring(0, 10);
+  console.log(`Using OpenAI API key starting with: ${keyPrefix}... (length: ${process.env.OPENAI_API_KEY.length})`);
+} else {
+  console.error("WARNING: No OPENAI_API_KEY found in environment variables!");
 }
 
 export async function POST(request: Request) {
@@ -50,23 +59,141 @@ export async function POST(request: Request) {
       );
     }
     
-    // In a real implementation, you would call your AI service here with the Kai prompt
-    // For example:
-    // const prompt = getCustomizedKaiPrompt(userContext);
-    // const aiResponse = await callAIService(prompt, message);
-    
-    // For now, just generate a simple response
-    const response = generateKaiResponse(message);
-    
-    // Simulate a delay to make it feel more natural
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Log that we're using the prompt from the file (in a real implementation)
+    // Log that we're using the Kai prompt from the file
     console.log(`Using Kai prompt (length: ${KAI_PROMPT.length} characters)`);
+    console.log(`Processing message: "${message.slice(0, 50)}${message.length > 50 ? '...' : ''}"`);
     
-    return NextResponse.json({
-      response: response
-    });
+    try {
+      // Create a streaming response from OpenAI
+      console.log("Creating streaming response from OpenAI");
+      const stream = await openai.responses.create({
+        model: "gpt-4o", // Use GPT-4o model with your higher rate limits
+        instructions: KAI_PROMPT,
+        input: message,
+        stream: true, // Enable streaming
+      });
+      console.log("OpenAI stream created successfully");
+
+      // Create a ReadableStream that emits SSE data
+      const readableStream = new ReadableStream({
+        async start(controller) {
+          try {
+            console.log("Starting to process stream events");
+            let eventCount = 0;
+            
+            // Process each event in the stream
+            for await (const event of stream) {
+              eventCount++;
+              
+              // For delta events, ensure we're sending the data correctly
+              // Format the event with type and data for the client
+              let safeEvent = event;
+              
+              // Log event types (but not all content to avoid cluttering logs)
+              if (eventCount <= 5 || eventCount % 20 === 0) {
+                console.log(`Event ${eventCount}: ${event.type}`);
+                
+                // Log structure of delta events for debugging
+                if (event.type === 'response.output_text.delta') {
+                  console.log('Delta event structure:', JSON.stringify(event, null, 2));
+                }
+              }
+              
+              try {
+                // Make sure the event data is serializable
+                const data = JSON.stringify({
+                  event: event.type,
+                  data: safeEvent,
+                });
+                
+                // Send the event as SSE format
+                controller.enqueue(`data: ${data}\n\n`);
+              } catch (jsonError) {
+                console.error("Error stringifying event:", jsonError);
+                
+                // Send a simplified version of the event
+                const simplifiedEvent = {
+                  event: event.type,
+                  data: {
+                    type: event.type,
+                    delta: event.type === 'response.output_text.delta' && 
+                          'delta' in event ? String(event.delta) : '',
+                    item_id: 'item_id' in event ? String(event.item_id) : '',
+                  }
+                };
+                
+                controller.enqueue(`data: ${JSON.stringify(simplifiedEvent)}\n\n`);
+              }
+            }
+            
+            console.log(`Stream complete, processed ${eventCount} events`);
+            // Send DONE event to signal the end of stream
+            controller.enqueue(`data: [DONE]\n\n`);
+            controller.close();
+          } catch (error) {
+            console.error("Error in streaming loop:", error);
+            
+            // Send an error event to the client
+            try {
+              const errorEvent = {
+                event: "error",
+                data: {
+                  message: error instanceof Error ? error.message : "Unknown streaming error"
+                }
+              };
+              controller.enqueue(`data: ${JSON.stringify(errorEvent)}\n\n`);
+              controller.enqueue(`data: [DONE]\n\n`);
+            } catch (finalError) {
+              console.error("Error sending error event:", finalError);
+            }
+            
+            controller.close();
+          }
+        },
+      });
+
+      // Return the stream as a Response object with appropriate headers
+      console.log("Returning stream response");
+      return new Response(readableStream, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+        },
+      });
+    } catch (openaiError: any) {
+      console.error("OpenAI API error:", openaiError);
+      
+      // Log more details about the error for debugging
+      if (openaiError.error) {
+        console.error("Error type:", openaiError.error.type);
+        console.error("Error code:", openaiError.error.code);
+        console.error("Organization ID:", openaiError.error.organization || "Not specified");
+        console.error("Error message:", openaiError.error.message);
+      }
+      
+      // For rate limit errors, provide a specific message
+      if (openaiError.error?.type === 'tokens' && openaiError.error?.code === 'rate_limit_exceeded') {
+        const waitTime = openaiError.error.message.match(/try again in (\d+\.\d+)s/)?.[1] || "a few seconds";
+        
+        return NextResponse.json(
+          { 
+            error: 'OpenAI rate limit exceeded',
+            message: `Please wait ${waitTime} seconds and try again.`
+          },
+          { status: 429 }
+        );
+      }
+      
+      // For other OpenAI errors
+      return NextResponse.json(
+        { 
+          error: 'OpenAI API error',
+          message: openaiError instanceof Error ? openaiError.message : "Unknown error processing request"
+        },
+        { status: 500 }
+      );
+    }
   } catch (error) {
     console.error('Error processing Kai chat request:', error);
     return NextResponse.json(
