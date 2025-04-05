@@ -4,7 +4,7 @@ import Chat from "./chat";
 import { Item } from "@/lib/assistant";
 import PartialJSON from 'partial-json';
 
-export default function PotatoJacksonAssistant() {
+export default function MindayJawnsonAssistant() {
   const [messages, setMessages] = useState<Item[]>([
     {
       type: "message",
@@ -12,15 +12,15 @@ export default function PotatoJacksonAssistant() {
       id: `initial_greeting_${Date.now()}`,
       content: [{ 
         type: "output_text", 
-        text: "Hello! I'm Potato Jackson. How can I help you today?" 
+        text: "Hello! I'm Minday Jawnson. How can I help you today?" 
       }],
     }
   ]);
   const [isLoading, setIsLoading] = useState(false);
   const responseTextRef = useRef('');
   const responseIdRef = useRef(`msg_${Date.now()}`);
-  const [debugInfo, setDebugInfo] = useState('');
   const [showDebug, setShowDebug] = useState(false);
+  const [debugInfo, setDebugInfo] = useState('');
   
   // Add a buffer and timer for smoothing out state updates
   const bufferTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -215,7 +215,7 @@ export default function PotatoJacksonAssistant() {
   const handleSendMessage = async (message: string) => {
     if (!message.trim()) return;
     
-    console.log("Sending message to Potato Jackson:", message);
+    console.log("Sending message to Minday Jawnson:", message);
     setDebugInfo('Sending message...');
 
     // Create a unique ID for this message
@@ -266,7 +266,7 @@ export default function PotatoJacksonAssistant() {
         },
         body: JSON.stringify({
           message: message.trim(),
-          demoId: "potato-jackson"
+          demoId: "minday-jawnson"
         }),
       });
       
@@ -581,18 +581,18 @@ export default function PotatoJacksonAssistant() {
       <div className="flex-shrink-0 px-4 py-3 border-b border-gray-200 bg-white">
         <div className="flex justify-between items-center">
           <div>
-            <h2 className="text-lg font-semibold">Potato Jackson</h2>
-            <p className="text-sm text-gray-600">Your kai helper but unique</p>
+            <h2 className="text-lg font-semibold">Minday Jawnson</h2>
+            <p className="text-sm text-gray-600">Your helpful AI assistant</p>
           </div>
           {showDebug && (
             <div className="text-xs text-gray-500 mt-1 overflow-auto max-h-20 p-1 border rounded">
-              {debugInfo}
+              {debugInfo || 'No debug info available'}
             </div>
           )}
         </div>
       </div>
       
-      {/* Chat Component - Takes remaining height */}
+      {/* Chat Component - Takes remaining height with proper container */}
       <div 
         className="flex-1 overflow-hidden relative" 
         style={{ 
@@ -603,14 +603,14 @@ export default function PotatoJacksonAssistant() {
         }}
       >
         <Chat 
-          items={messages} 
+          messages={messages} 
           onSendMessage={handleSendMessage}
           isLoading={isLoading}
           starters={[
-            "Tell me about the operations management course",
-            "What are the key formulas we need to know?",
-            "Can you explain the safety stock calculation?",
-            "How do I calculate cycle service level?"
+            "Tell me about yourself",
+            "What can you help me with?",
+            "How does this demo work?",
+            "What features do you have?"
           ]}
         />
       </div>

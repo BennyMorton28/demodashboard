@@ -86,8 +86,33 @@ const Message: React.FC<MessageProps> = ({ message }) => {
 
   // Prepare text for better markdown rendering
   const prepareMarkdownText = (text: string) => {
-    // Fix issues with math expressions
-    let processedText = text
+    // First, check for cut-off math expressions and fix them
+    let processedText = text;
+
+    // 1. Fix unclosed math blocks
+    const mathBlockDelimiters = processedText.match(/\$\$/g);
+    if (mathBlockDelimiters && mathBlockDelimiters.length % 2 !== 0) {
+      // Add a closing delimiter if there's an odd number
+      processedText += ' $$';
+    }
+
+    // 2. Fix unclosed inline math
+    const inlineMathCount = (processedText.match(/\$/g) || []).length - (processedText.match(/\$\$/g) || []).length * 2;
+    if (inlineMathCount % 2 !== 0) {
+      // Add a closing dollar sign if there's an odd number
+      processedText += '$';
+    }
+
+    // 3. Fix unclosed code blocks
+    const codeBlockOpenings = (processedText.match(/```[a-zA-Z0-9]*/g) || []).length;
+    const codeBlockClosings = (processedText.match(/```\s*(?:\n|$)/g) || []).length;
+    if (codeBlockOpenings > codeBlockClosings) {
+      // Add closing code block
+      processedText += '\n```';
+    }
+
+    // Now continue with other cleanups
+    processedText = processedText
       // Replace multiple newlines with just two (for paragraph breaks)
       .replace(/\n{3,}/g, '\n\n')
       // Ensure proper spacing for lists
@@ -98,6 +123,10 @@ const Message: React.FC<MessageProps> = ({ message }) => {
       .replace(/\\sigma/g, '\\sigma')
       .replace(/\\text/g, '\\text')
       .replace(/\\frac/g, '\\frac')
+      // Fix common math notation issues
+      .replace(/\\_/g, '\\_')
+      .replace(/\\{/g, '\\{')
+      .replace(/\\}/g, '\\}')
       // Ensure inline math expressions are properly formatted
       .replace(/\\\(/g, '$')
       .replace(/\\\)/g, '$')
@@ -108,6 +137,18 @@ const Message: React.FC<MessageProps> = ({ message }) => {
     // Remove truncation message if present
     if (processedText.includes('[...stream truncated due to size...]')) {
       processedText = processedText.replace('[...stream truncated due to size...]', '');
+    }
+
+    // Fix for unbalanced asterisks (bold/italic)
+    const asterisksCount = (processedText.match(/\*/g) || []).length;
+    if (asterisksCount % 2 !== 0) {
+      processedText += '*';
+    }
+
+    // Fix for unbalanced underscores (also used for italic/bold in markdown)
+    const underscoresCount = (processedText.match(/_(?!\{)/g) || []).length;
+    if (underscoresCount % 2 !== 0) {
+      processedText += '_';
     }
     
     return processedText;

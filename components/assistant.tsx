@@ -67,23 +67,28 @@ export default function Assistant() {
   };
 
   return (
-    <div className="h-full flex relative">
-      {/* Chat Section */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Assistant Info Header */}
-        <div className="px-4 py-3 border-b border-gray-200 bg-white">
-          <h2 className="text-lg font-semibold">Knowledge Assistant</h2>
-          <p className="text-sm text-gray-600">Ask me anything about the displayed content</p>
-        </div>
-        
-        {/* Chat Component */}
-        <div className="flex-1 min-h-0">
-          <Chat 
-            items={messages} 
-            onSendMessage={handleSendMessage}
-            isLoading={isLoading}
-          />
-        </div>
+    <div className="h-full w-full flex flex-col overflow-hidden">
+      {/* Assistant Info Header - Fixed */}
+      <div className="flex-shrink-0 px-4 py-3 border-b border-gray-200 bg-white">
+        <h2 className="text-lg font-semibold">Knowledge Assistant</h2>
+        <p className="text-sm text-gray-600">Ask me anything about the displayed content</p>
+      </div>
+      
+      {/* Chat Component - Takes remaining height with proper container */}
+      <div 
+        className="flex-1 overflow-hidden relative" 
+        style={{ 
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
+          position: "relative"
+        }}
+      >
+        <Chat 
+          items={messages} 
+          onSendMessage={handleSendMessage}
+          isLoading={isLoading}
+        />
       </div>
     </div>
   );

@@ -525,7 +525,15 @@ export default function KaiAssistant() {
       </div>
       
       {/* Chat Component - Takes remaining height */}
-      <div className="flex-1 overflow-hidden relative">
+      <div 
+        className="flex-1 overflow-hidden relative"
+        style={{ 
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
+          position: "relative"
+        }}
+      >
         <Chat 
           items={messages} 
           onSendMessage={handleSendMessage}

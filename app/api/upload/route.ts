@@ -430,6 +430,7 @@ export default function ${componentName}Assistant() {
     {
       type: "message",
       role: "assistant",
+      id: \`initial_greeting_\${Date.now()}\`,
       content: [{ 
         type: "output_text", 
         text: "${welcomeMessage}" 
@@ -705,40 +706,37 @@ export default function ${componentName}Assistant() {
   };
 
   return (
-    <div className="h-full flex relative">
-      {/* Chat Section */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Assistant Info Header */}
-        <div className="px-4 py-3 border-b border-gray-200 bg-white">
-          <div className="flex justify-between items-center">
-            <div>
-              <h2 className="text-lg font-semibold">${assistantTitle}</h2>
-              <p className="text-sm text-gray-600">${assistantDescription || 'Your AI Assistant'}</p>
-            </div>
-            <button 
-              onClick={() => setShowDebug(!showDebug)}
-              className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-600"
-            >
-              {showDebug ? 'Hide Debug' : 'Debug'}
-            </button>
+    <div className="h-full w-full flex flex-col overflow-hidden">
+      {/* Assistant Info Header - Fixed */}
+      <div className="flex-shrink-0 px-4 py-3 border-b border-gray-200 bg-white">
+        <div className="flex justify-between items-center">
+          <div>
+            <h2 className="text-lg font-semibold">${assistantTitle}</h2>
+            <p className="text-sm text-gray-600">${assistantDescription || 'Your AI Assistant'}</p>
           </div>
-          
-          {/* Debug Panel */}
           {showDebug && (
-            <div className="mt-2 p-2 bg-gray-100 rounded text-xs text-gray-600 font-mono whitespace-pre-wrap">
+            <div className="text-xs text-gray-500 mt-1 overflow-auto max-h-20 p-1 border rounded">
               {debugInfo || 'No debug info available'}
             </div>
           )}
         </div>
-
-        {/* Chat Interface */}
-        <div className="flex-1 overflow-hidden">
-          <Chat
-            messages={messages}
-            isLoading={isLoading}
-            onSendMessage={handleSendMessage}
-          />
-        </div>
+      </div>
+      
+      {/* Chat Component - Takes remaining height with proper container */}
+      <div 
+        className="flex-1 overflow-hidden relative" 
+        style={{ 
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
+          position: "relative"
+        }}
+      >
+        <Chat 
+          messages={messages}
+          isLoading={isLoading}
+          onSendMessage={handleSendMessage}
+        />
       </div>
     </div>
   );

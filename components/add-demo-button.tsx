@@ -4,6 +4,7 @@ import React, { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { PlusIcon, InfoIcon, XIcon, CheckIcon } from "lucide-react";
+import Link from "next/link";
 
 // Tooltip component
 const Tooltip = ({ content, children }: { content: React.ReactNode, children: React.ReactNode }) => {
@@ -62,25 +63,24 @@ interface AddDemoButtonProps {
 
 export default function AddDemoButton({ onDemoAdded }: AddDemoButtonProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [password, setPassword] = useState("");
   const [passwordVerified, setPasswordVerified] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
   const [wasRenamed, setWasRenamed] = useState(false);
   const [createdDemoId, setCreatedDemoId] = useState("");
+  const [createdDemoPath, setCreatedDemoPath] = useState("");
   const [originalDemoId, setOriginalDemoId] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
-  const router = useRouter();
-
-  // Form state
   const [demoTitle, setDemoTitle] = useState("");
   const [assistantTitle, setAssistantTitle] = useState("");
   const [assistantDescription, setAssistantDescription] = useState("");
   const [promptFile, setPromptFile] = useState<File | null>(null);
   const [contentFile, setContentFile] = useState<File | null>(null);
   const [iconFile, setIconFile] = useState<File | null>(null);
-  const [previewIcon, setPreviewIcon] = useState<string | null>(null);
+  const [previewIcon, setPreviewIcon] = useState<string>("");
+  const router = useRouter();
 
   const verifyPassword = () => {
     if (password === "pickles") {
@@ -172,11 +172,15 @@ export default function AddDemoButton({ onDemoAdded }: AddDemoButtonProps) {
         onDemoAdded();
       }
       
+      // Store the demo ID for navigation
+      const newDemoPath = `/demos/${result.demoId}`;
+      setCreatedDemoPath(newDemoPath);
+      
       // Add a delay before redirecting to the new demo
       setTimeout(() => {
-        router.push(`/demos/${result.demoId}`);
+        router.push(newDemoPath);
         router.refresh();
-      }, 3000); // Increased to 3 seconds to give time to read the message
+      }, 5000); // Increased to 5 seconds to give more time for the page to load
     } catch (err: any) {
       setError(err.message || "Failed to create demo");
     } finally {
@@ -270,7 +274,18 @@ export default function AddDemoButton({ onDemoAdded }: AddDemoButtonProps) {
                       </p>
                     </div>
                   )}
-                  <p className="text-gray-600">Redirecting you to your new demo in a moment...</p>
+                  <p className="text-gray-600 mb-4">Redirecting you to your new demo in a moment...</p>
+                  
+                  {/* Fallback link in case auto-redirect doesn't work */}
+                  <div className="mt-2">
+                    <p className="text-sm text-gray-500">If you're not redirected automatically:</p>
+                    <Link 
+                      href={createdDemoPath} 
+                      className="mt-2 inline-block px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                    >
+                      Go to Demo Now
+                    </Link>
+                  </div>
                 </div>
               ) : (
                 <form onSubmit={handleSubmit}>
