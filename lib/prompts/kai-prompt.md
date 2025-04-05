@@ -139,14 +139,14 @@ This is a (streamlined) version of the syllabus that students have access to.
 - This is the Operations Management Class, taught in the Winter quarter of 2025, from January to March (10 weeks), to Full Time MBA students. Kellogg's Full Time program (sometimes called 2Y) is Kellogg's main MBA program. Most students live in Evanston and go to class at the Kellogg Global Hub.
 - It is a required "core" class at Kellogg, and there are many sections of that class, taught by different instructors. Prof. Sébastien Martin teaches two sections.
 - Section 32 is on Tue/Fri from 10:30-12:00 pm in room KGH L120 and Section 31 is on Tue/Fri from 1:30-3 pm in room KGH L110.
-- This course introduces operations management: the design and control of business processes. Operations, alongside marketing and finance, is central to a firm’s success. You will gain tools to address operational challenges, enhance business processes, and develop competitive advantage. Ideal for those pursuing careers in operations, consulting, or general management, this course emphasizes cross-functional insights relevant to marketing, finance, and HR.
+- This course introduces operations management: the design and control of business processes. Operations, alongside marketing and finance, is central to a firm's success. You will gain tools to address operational challenges, enhance business processes, and develop competitive advantage. Ideal for those pursuing careers in operations, consulting, or general management, this course emphasizes cross-functional insights relevant to marketing, finance, and HR.
 - You will engage with the class in multiple ways throughout the quarter:
-	1. **Class Preparation with AI**:  Before each class, you’ll complete a short (<30 min) AI-based “ChatGPT” assignment using our assistant, Kai. This will help you prepare for class discussions, practice previous material, and allow me to “warm-call” you to share your thoughts in class. The name "Kai" was chosen in 2024 by the votes of Prof. Martin's MBA students.
-	2. **Classroom Sessions**:  We’ll learn new concepts, develop frameworks, and discuss cases interactively. Active participation is key—I’ll call on individuals to share their views, so come prepared to engage! I will bring printouts to class _(no need to print anything in advance)_. Laptops & phone use during class are not allowed, but  I will upload slides in advance for use on a tablet/flat computer.
-	3. **Team Homework**:  There will be team submissions (case write-ups). Teams of five will be assigned on week 1. I’ll host Zoom sessions before each written submission to help your team collaborate and prepare. Your group’s participation is highly encouraged.
+	1. **Class Preparation with AI**:  Before each class, you'll complete a short (<30 min) AI-based "ChatGPT" assignment using our assistant, Kai. This will help you prepare for class discussions, practice previous material, and allow me to "warm-call" you to share your thoughts in class. The name "Kai" was chosen in 2024 by the votes of Prof. Martin's MBA students.
+	2. **Classroom Sessions**:  We'll learn new concepts, develop frameworks, and discuss cases interactively. Active participation is key—I'll call on individuals to share their views, so come prepared to engage! I will bring printouts to class _(no need to print anything in advance)_. Laptops & phone use during class are not allowed, but  I will upload slides in advance for use on a tablet/flat computer.
+	3. **Team Homework**:  There will be team submissions (case write-ups). Teams of five will be assigned on week 1. I'll host Zoom sessions before each written submission to help your team collaborate and prepare. Your group's participation is highly encouraged.
 	4. **Review Sessions and Tutorials**:  To help you succeed on the exam, TAs and I will hold tutorials and exam-prep sessions on Zoom to practice quantitative problems and solve exam-style questions.
-	5. **Office Hours**:  I’m always happy to meet! Email me to schedule a conversation in person or on Zoom.
-	6. **Ops Lunches**:  I’ll organize two lunches per section, with ten slots each. The student liaison will manage sign-ups for interested students.
+	5. **Office Hours**:  I'm always happy to meet! Email me to schedule a conversation in person or on Zoom.
+	6. **Ops Lunches**:  I'll organize two lunches per section, with ten slots each. The student liaison will manage sign-ups for interested students.
 
 ## Course Materials
 
@@ -203,7 +203,7 @@ AI plays a significant role in OPNS430. Generative AI is encouraged for learning
 
 ## Classroom Etiquette
 
-- Follow Kellogg’s Code of Classroom Etiquette ([link](https://www.kellogg.northwestern.edu/policies/etiquette.aspx)).
+- Follow Kellogg's Code of Classroom Etiquette ([link](https://www.kellogg.northwestern.edu/policies/etiquette.aspx)).
 - Avoid disruptions: no cross-talking, no laptop or device usage (except tablets for notes), or late arrivals.
 - Reach out to prof. Martin if you have a good reason to need a laptop.
 
@@ -233,7 +233,7 @@ Use the information as background information and to triage student requests to 
 **Email:** sebastien.martin@kellogg.northwestern.edu 
 **Responsibilities:** Overseeing course & lectures. Contact after exhausting other options.
 
-Prof. Martin has been at Kellogg since 2020 and has taught Operations Management ever since, including in the E/W and MBAi programs. He is an Assistant Professor in the Operations group. He is French and was born on 07/24/1991 near Paris. He earned his MSc in applied math from École Polytechnique and his PhD in operations research at MIT (advised by Dimitris Bertsimas and Patrick Jaillet). His research focuses on the interface between humans and algorithms, with the hope of positively impacting society. Most of his work lies in the academic fields of optimization, mathematical modeling, transportation, and public policy. It is important to him that his research is helpful in the real world. For example, he helped Boston redesign its school transportation system, San Francisco change its school schedules, and Lyft revise its matching algorithm. These changes save tens of millions of dollars annually and benefit millions. Their impact was recognized twice as a Franz Edelman Award laureate. During his teaching, he is particularly passionate about the role of AI in operations and positive social impact. More info on [his website](https://sebastienmartin.info).
+Prof. Martin has been at Kellogg since 2020 and has taught Operations Management ever since, including in the E/W and MBAi programs. He is an Assistant Professor in the Operations group. He is French and was born on 07/24/1991 near Paris. He earned his MSc in applied math from École Polytechnique and his PhD in operations research at MIT (advised by Dimitris Bertsimas and Patrick Jaillet). His research focuses on the interface between humans and algorithms, with the hope of positively impacting society. Most of his work lies in the academic fields of optimization, mathematical modeling, transportation, and public policy. It is important to him that his research is helpful in the real world. For example, he helped Boston redesign its school transportation system, San Francisco change its school schedules, and Lyft revise its matching algorithm. These changes save tens of millions of dollars annually and benefit millions. Their impact was recognized twice as a Franz Edelman Award laureate. During his teaching, he is particularly passionate about the role of AI in operations and positive social impact. More info on [his website](https://sebastienmartin.info).
 
 ## Head-assistant: Nalin Shani
 
@@ -772,12 +772,12 @@ In this qualitative class, we introduced the module of Service Operations
         - _Paytran A case:_
             - Insurance for fraud transactions
             - Threshold of 2% fraud, that is, if there's fraud for less than 2% of the transaction, the customer pays. Otherwise, Paytran pays.
-            - Focus on a single customer (IWantIt) to run an experiment and determine if it’s successful, they will implement with the rest of the customers.
+            - Focus on a single customer (IWantIt) to run an experiment and determine if it's successful, they will implement with the rest of the customers.
             - Measures from last 2 years for IWantIt (June 2017 to June 2019): Mean 1.69%, St. Dev 0.31%
                 - Do we always meet the standard? No! There is variability! What percentage of time we meet the 2% standard?
             - Experiment: 1 month of data this year (September 2019)
                 - Mean 1.53%, St. Dev. 0.22%
-                - Was there improvement? Looks like it because mean and st. dev. are smaller than before. But there is randomness. How do we know that September is not a good month and there’s no real improvement?
+                - Was there improvement? Looks like it because mean and st. dev. are smaller than before. But there is randomness. How do we know that September is not a good month and there's no real improvement?
                 - This question is hard because the data is not deterministic.
                 - We need to determine the difference between noise and a signal
                 - We need a clear/objective measure!

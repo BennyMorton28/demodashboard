@@ -36,7 +36,7 @@ const demoCards: DemoCard[] = [
     id: "kai",
     title: "Kai (Kellogg AI)",
     description: "An AI assistant specialized in helping Kellogg students with academic and career guidance.",
-    icon: "/icons/kai.svg",
+    icon: "/icons/kai.png",
     path: "/demos/kai"
   },
   {
@@ -127,57 +127,59 @@ export default function Dashboard() {
                   <div className="p-6 flex flex-col h-full">
                     <div className="flex items-center mb-4">
                       <div className="bg-gray-100 rounded-lg p-3 mr-4">
-                        {/* For demo purposes, we'll use placeholder icons */}
-                        <svg 
-                          xmlns="http://www.w3.org/2000/svg" 
-                          width="24" 
-                          height="24" 
-                          viewBox="0 0 24 24" 
-                          fill="none" 
-                          stroke="currentColor" 
-                          strokeWidth="2" 
-                          strokeLinecap="round" 
-                          strokeLinejoin="round"
-                          className="text-gray-700"
-                        >
-                          {demo.id.includes("knowledge") && (
-                            <>
-                              <circle cx="12" cy="12" r="10" />
-                              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-                              <path d="M12 17h.01" />
-                            </>
-                          )}
-                          {demo.id.includes("bmsd-case-study") && (
-                            <>
-                              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                              <circle cx="9" cy="7" r="4" />
-                              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                            </>
-                          )}
-                          {demo.id === "kai" && (
-                            <>
-                              <path d="M12 2a9 9 0 0 1 9 9v7.5a3.5 3.5 0 0 1-6.39 1.976a2.999 2.999 0 0 1-5.22 0a3.5 3.5 0 0 1-6.39-1.976V11a9 9 0 0 1 9-9Z" />
-                              <path d="M12 6v4" />
-                              <path d="M8 10h8" />
-                            </>
-                          )}
-                          {demo.id.includes("document") && (
-                            <>
-                              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                              <polyline points="14 2 14 8 20 8" />
-                              <line x1="16" y1="13" x2="8" y2="13" />
-                              <line x1="16" y1="17" x2="8" y2="17" />
-                              <polyline points="10 9 9 9 8 9" />
-                            </>
-                          )}
-                          {demo.id.includes("tutor") && (
-                            <>
-                              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-                              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-                            </>
-                          )}
-                        </svg>
+                        {/* Use actual image for Kai, SVG icons for others */}
+                        {demo.id === "kai" ? (
+                          <Image 
+                            src={demo.icon}
+                            alt={`${demo.title} icon`}
+                            width={24}
+                            height={24}
+                          />
+                        ) : (
+                          <svg 
+                            xmlns="http://www.w3.org/2000/svg" 
+                            width="24" 
+                            height="24" 
+                            viewBox="0 0 24 24" 
+                            fill="none" 
+                            stroke="currentColor" 
+                            strokeWidth="2" 
+                            strokeLinecap="round" 
+                            strokeLinejoin="round"
+                            className="text-gray-700"
+                          >
+                            {demo.id.includes("knowledge") && (
+                              <>
+                                <circle cx="12" cy="12" r="10" />
+                                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                                <path d="M12 17h.01" />
+                              </>
+                            )}
+                            {demo.id.includes("bmsd-case-study") && (
+                              <>
+                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                                <circle cx="9" cy="7" r="4" />
+                                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                              </>
+                            )}
+                            {demo.id.includes("document") && (
+                              <>
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                <polyline points="14 2 14 8 20 8" />
+                                <line x1="16" y1="13" x2="8" y2="13" />
+                                <line x1="16" y1="17" x2="8" y2="17" />
+                                <polyline points="10 9 9 9 8 9" />
+                              </>
+                            )}
+                            {demo.id.includes("tutor") && (
+                              <>
+                                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                              </>
+                            )}
+                          </svg>
+                        )}
                       </div>
                       <h3 className="text-lg font-semibold text-gray-900">{demo.title}</h3>
                     </div>

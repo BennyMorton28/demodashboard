@@ -57,7 +57,44 @@ export default {
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
+      typography: {
+        DEFAULT: {
+          css: {
+            maxWidth: 'none',
+            color: 'inherit',
+            a: {
+              color: '#3182ce',
+              '&:hover': {
+                color: '#2c5282',
+              },
+            },
+            table: {
+              borderCollapse: 'collapse',
+              width: '100%',
+              borderColor: '#e2e8f0',
+              borderWidth: '1px',
+            },
+            th: {
+              backgroundColor: '#f7fafc',
+              borderBottomWidth: '1px',
+              borderColor: '#e2e8f0',
+              padding: '0.75rem',
+              textAlign: 'left',
+            },
+            td: {
+              borderBottomWidth: '1px',
+              borderColor: '#e2e8f0',
+              padding: '0.75rem',
+            },
+            'blockquote p:first-of-type::before': { content: 'none' },
+            'blockquote p:last-of-type::after': { content: 'none' },
+          },
+        },
+      },
     },
   },
-  plugins: [tailwindcssAnimate],
+  plugins: [
+    tailwindcssAnimate,
+    require('@tailwindcss/typography'),
+  ],
 } satisfies Config;

@@ -7,8 +7,8 @@ import AuthProvider from "@/components/providers/session-provider";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "BMSD Case Study",
-  description: "Interactive case study for BMSD transportation planning",
+  title: "Noyes Demo Dashboard",
+  description: "Explore AI assistants and demo applications by Noyes AI",
   icons: {
     icon: [
       { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
