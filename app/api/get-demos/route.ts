@@ -23,7 +23,7 @@ export async function GET() {
     if (fs.existsSync(demoFolders)) {
       const entries = await readdir(demoFolders, { withFileTypes: true });
       for (const entry of entries) {
-        if (entry.isDirectory() && entry.name !== 'streaming-api' && !entry.name.startsWith('.')) {
+        if (entry.isDirectory() && !entry.name.startsWith('.')) {
           demos.add(entry.name);
         }
       }
@@ -40,7 +40,7 @@ export async function GET() {
     }
     
     // Filter out some internal or special demos that shouldn't be listed
-    const excludedDemos = ['case-study', 'bmsd-case-study', 'streaming-api'];
+    const excludedDemos = ['case-study', 'bmsd-case-study', 'streaming-api', 'document-chat', 'tutor-bot', 'knowledge-assistant'];
     const demoIds = Array.from(demos).filter(demo => !excludedDemos.includes(demo));
     
     // Get additional metadata for each demo
