@@ -430,74 +430,65 @@ export default function KaiAssistant() {
   };
 
   return (
-    <div className="h-full flex relative">
-      {/* Chat Section */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Assistant Info Header */}
-        <div className="px-4 py-3 border-b border-gray-200 bg-white">
-          <div className="flex justify-between items-center">
-            <div>
-              <h2 className="text-lg font-semibold">Kai (Kellogg AI)</h2>
-              <p className="text-sm text-gray-600">Your Kellogg student assistant</p>
-            </div>
-            <button 
-              onClick={() => setShowDebug(!showDebug)}
-              className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-600"
-            >
-              {showDebug ? 'Hide Debug' : 'Debug'}
-            </button>
+    <div className="h-full w-full flex flex-col overflow-hidden">
+      {/* Assistant Info Header - Fixed */}
+      <div className="flex-shrink-0 px-4 py-3 border-b border-gray-200 bg-white">
+        <div className="flex justify-between items-center">
+          <div>
+            <h2 className="text-lg font-semibold">Kai (Kellogg AI)</h2>
+            <p className="text-sm text-gray-600">Your Kellogg student assistant</p>
           </div>
-          
-          {/* Debug Panel */}
-          {showDebug && (
-            <div className="mt-2 p-2 bg-gray-100 rounded text-xs">
-              <div className="flex flex-wrap gap-2 mb-2">
-                <button 
-                  onClick={testApiKey} 
-                  className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
-                >
-                  Test API Key
-                </button>
-                
-                <button 
-                  onClick={() => {
-                    setApiKeyStatus({status: 'trying_alt', details: {message: "Trying the alternate API route..."}});
-                    handleSendMessage("Hello, using alternate API", "/api/kai-chat-alt");
-                  }} 
-                  className="px-2 py-1 bg-blue-100 rounded hover:bg-blue-200"
-                >
-                  Try Alt API (GPT-3.5)
-                </button>
-              </div>
-              
-              {apiKeyStatus && (
-                <div className="mt-2">
-                  <p><strong>Status:</strong> {apiKeyStatus.status}</p>
-                  {apiKeyStatus.details && (
-                    <pre className="mt-1 p-1 bg-gray-200 rounded max-h-20 overflow-auto">
-                      {JSON.stringify(apiKeyStatus.details, null, 2)}
-                    </pre>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
         </div>
         
-        {/* Chat Component */}
-        <div className="flex-1 min-h-0">
-          <Chat 
-            items={messages} 
-            onSendMessage={handleSendMessage}
-            isLoading={isLoading}
-            starters={[
-              "Can you tell me about Kellogg's MBA program?",
-              "What career resources are available for students?",
-              "How can I best prepare for my marketing class?",
-              "Tell me about student clubs at Kellogg"
-            ]}
-          />
-        </div>
+        {/* Debug Panel - Hidden by default */}
+        {showDebug && (
+          <div className="mt-2 p-2 bg-gray-100 rounded text-xs">
+            <div className="flex flex-wrap gap-2 mb-2">
+              <button 
+                onClick={testApiKey} 
+                className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
+              >
+                Test API Key
+              </button>
+              
+              <button 
+                onClick={() => {
+                  setApiKeyStatus({status: 'trying_alt', details: {message: "Trying the alternate API route..."}});
+                  handleSendMessage("Hello, using alternate API", "/api/kai-chat-alt");
+                }} 
+                className="px-2 py-1 bg-blue-100 rounded hover:bg-blue-200"
+              >
+                Try Alt API (GPT-3.5)
+              </button>
+            </div>
+            
+            {apiKeyStatus && (
+              <div className="mt-2">
+                <p><strong>Status:</strong> {apiKeyStatus.status}</p>
+                {apiKeyStatus.details && (
+                  <pre className="mt-1 p-1 bg-gray-200 rounded max-h-20 overflow-auto">
+                    {JSON.stringify(apiKeyStatus.details, null, 2)}
+                  </pre>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      
+      {/* Chat Component - Takes remaining height */}
+      <div className="flex-1 overflow-hidden relative">
+        <Chat 
+          items={messages} 
+          onSendMessage={handleSendMessage}
+          isLoading={isLoading}
+          starters={[
+            "Can you tell me about Kellogg's MBA program?",
+            "What career resources are available for students?",
+            "How can I best prepare for my marketing class?",
+            "Tell me about student clubs at Kellogg"
+          ]}
+        />
       </div>
     </div>
   );

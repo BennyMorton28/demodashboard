@@ -84,10 +84,12 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
+    console.log("Auth status:", status, "Session:", session ? "exists" : "none");
     if (status === "unauthenticated") {
+      console.log("User is not authenticated, redirecting to signin page");
       router.push("/auth/signin");
     }
-  }, [status, router]);
+  }, [status, router, session]);
 
   if (status === "loading" || loading) {
     return (
@@ -98,6 +100,7 @@ export default function Dashboard() {
   }
 
   if (!session) {
+    console.log("No session found, returning null");
     return null;
   }
 

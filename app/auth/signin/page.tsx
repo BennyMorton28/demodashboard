@@ -4,15 +4,21 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { signIn, useSession } from 'next-auth/react';
 import ReCAPTCHA from 'react-google-recaptcha';
+import { toast } from 'react-hot-toast';
 
 export default function SignIn() {
   const router = useRouter();
   const { data: session } = useSession();
   const [error, setError] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [recaptchaKey, setRecaptchaKey] = useState<string | null>(null);
 
   useEffect(() => {
+    // Set recaptcha key from environment variable
+    setRecaptchaKey(process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || null);
+    
     if (session) {
+      console.log("Session already exists, redirecting to dashboard");
       router.push('/');
     }
   }, [session, router]);
@@ -34,6 +40,9 @@ export default function SignIn() {
 
       if (result?.error) {
         setError(result.error);
+      } else {
+        toast.success("Verification successful");
+        router.push('/');
       }
     } catch (error) {
       setError('Verification failed. Please try again.');
@@ -50,7 +59,7 @@ export default function SignIn() {
             Human Verification Required
           </h2>
           <p className="mt-3 text-sm text-gray-600">
-            Please verify that you're human to access the BMSD Transportation Case Study
+            Please verify that you're human to access the AI Demo Dashboard
           </p>
         </div>
 
@@ -64,19 +73,25 @@ export default function SignIn() {
           ) : (
             <div className="w-full">
               <div className="flex justify-center mb-6">
-                <ReCAPTCHA
-                  sitekey={process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY!}
-                  onChange={handleVerification}
-                  onErrored={() => {
-                    setError('Error loading verification. Please refresh the page.');
-                  }}
-                  onExpired={() => {
-                    setError('Verification expired. Please try again.');
-                  }}
-                />
+                {recaptchaKey ? (
+                  <ReCAPTCHA
+                    sitekey={recaptchaKey}
+                    onChange={handleVerification}
+                    onErrored={() => {
+                      setError('Error loading verification. Please refresh the page.');
+                    }}
+                    onExpired={() => {
+                      setError('Verification expired. Please try again.');
+                    }}
+                  />
+                ) : (
+                  <div className="p-4 bg-red-50 text-red-600 rounded-md">
+                    Error: reCAPTCHA configuration missing. Please check your environment variables.
+                  </div>
+                )}
               </div>
               <p className="text-center text-xs text-gray-500">
-                This helps us prevent automated access to the case study
+                This helps us prevent automated access to the application
               </p>
             </div>
           )}

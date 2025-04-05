@@ -8,7 +8,7 @@ import { existsSync } from 'fs';
 // Initialize OpenAI client
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
-  organization: process.env.OPENAI_ORG_ID,
+  // Let the API use the organization associated with the API key
 });
 
 export async function POST(req: NextRequest) {

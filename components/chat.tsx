@@ -15,8 +15,8 @@ interface ChatProps {
 }
 
 const Chat: React.FC<ChatProps> = ({ items, messages, onSendMessage, isLoading = false, starters }) => {
-  const itemsEndRef = useRef<HTMLDivElement>(null);
-  const [inputMessageText, setinputMessageText] = useState<string>("");
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [inputMessageText, setInputMessageText] = useState<string>("");
   // This state is used to provide better user experience for non-English IMEs such as Japanese
   const [isComposing, setIsComposing] = useState(false);
   
@@ -24,14 +24,16 @@ const Chat: React.FC<ChatProps> = ({ items, messages, onSendMessage, isLoading =
   const chatItems = items || messages || [];
 
   const scrollToBottom = () => {
-    itemsEndRef.current?.scrollIntoView({ behavior: "instant" });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
   const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey && !isComposing) {
       event.preventDefault();
-      onSendMessage(inputMessageText);
-      setinputMessageText("");
+      if (inputMessageText.trim()) {
+        onSendMessage(inputMessageText);
+        setInputMessageText("");
+      }
     }
   }, [onSendMessage, inputMessageText, isComposing]);
 
@@ -49,8 +51,8 @@ const Chat: React.FC<ChatProps> = ({ items, messages, onSendMessage, isLoading =
 
   return (
     <div className="flex flex-col h-full">
-      {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Messages Area - Scrollable */}
+      <div className="flex-1 overflow-y-auto pb-16">
         <div className="px-4 py-4 space-y-4 mx-auto max-w-4xl">
           {chatItems.length === 0 && (
             <div className="py-8">
@@ -94,34 +96,31 @@ const Chat: React.FC<ChatProps> = ({ items, messages, onSendMessage, isLoading =
                 <div className="w-1.5 h-1.5 rounded-full bg-black animate-bounce" 
                      style={{ 
                        animationDelay: '0ms',
-                       animationDuration: '0.7s',
-                       transform: 'translateY(0)'
+                       animationDuration: '0.7s'
                      }}>
                 </div>
                 <div className="w-1.5 h-1.5 rounded-full bg-black animate-bounce" 
                      style={{ 
                        animationDelay: '120ms',
-                       animationDuration: '0.7s',
-                       transform: 'translateY(0)'
+                       animationDuration: '0.7s'
                      }}>
                 </div>
                 <div className="w-1.5 h-1.5 rounded-full bg-black animate-bounce" 
                      style={{ 
                        animationDelay: '240ms',
-                       animationDuration: '0.7s',
-                       transform: 'translateY(0)'
+                       animationDuration: '0.7s'
                      }}>
                 </div>
               </div>
             </div>
           )}
           
-          <div ref={itemsEndRef} />
+          <div ref={messagesEndRef} />
         </div>
       </div>
 
-      {/* Message Input */}
-      <div className="p-3 border-t border-gray-200">
+      {/* Message Input - Fixed at bottom */}
+      <div className="sticky bottom-0 left-0 right-0 py-2 px-3 border-t border-gray-200 bg-white shadow-lg z-10">
         <div className="mx-auto max-w-4xl">
           <div className="flex w-full items-end rounded-lg border border-gray-200 bg-white">
             <textarea
@@ -130,21 +129,23 @@ const Chat: React.FC<ChatProps> = ({ items, messages, onSendMessage, isLoading =
               dir="auto"
               rows={1}
               placeholder="Message..."
-              className="flex-1 resize-none border-0 bg-transparent p-3 focus:outline-none text-sm min-h-[44px] max-h-[200px]"
+              className="flex-1 resize-none border-0 bg-transparent p-3 focus:outline-none text-sm min-h-[44px] max-h-[200px] overflow-auto"
               value={inputMessageText}
-              onChange={(e) => setinputMessageText(e.target.value)}
+              onChange={(e) => setInputMessageText(e.target.value)}
               onKeyDown={handleKeyDown}
               onCompositionStart={() => setIsComposing(true)}
               onCompositionEnd={() => setIsComposing(false)}
               disabled={isLoading}
             />
             <button
-              disabled={!inputMessageText || isLoading}
+              disabled={!inputMessageText.trim() || isLoading}
               data-testid="send-button"
               className="flex h-[44px] w-[44px] items-center justify-center rounded-r-lg bg-black text-white transition-colors hover:opacity-70 disabled:bg-gray-100 disabled:text-gray-400"
               onClick={() => {
-                onSendMessage(inputMessageText);
-                setinputMessageText("");
+                if (inputMessageText.trim()) {
+                  onSendMessage(inputMessageText);
+                  setInputMessageText("");
+                }
               }}
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">

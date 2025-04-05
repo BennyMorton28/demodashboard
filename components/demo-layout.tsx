@@ -1,16 +1,16 @@
 "use client";
 
-import { useEffect } from "react";
-import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import StreamingDemo from "@/components/streaming-demo";
+import React, { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { useRef, useState } from "react";
 
-export default function StreamingAPIDemo() {
-  const { data: session, status } = useSession();
-  const router = useRouter();
+interface DemoLayoutProps {
+  title: string;
+  leftContent: React.ReactNode;
+  rightContent: React.ReactNode;
+}
+
+const DemoLayout: React.FC<DemoLayoutProps> = ({ title, leftContent, rightContent }) => {
   const [footerHeight, setFooterHeight] = useState(0);
   const [headerHeight, setHeaderHeight] = useState(64); // Default
   const headerRef = useRef<HTMLDivElement>(null);
@@ -38,24 +38,6 @@ export default function StreamingAPIDemo() {
     
     return () => window.removeEventListener('resize', updateHeights);
   }, []);
-  
-  useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push("/auth/signin");
-    }
-  }, [status, router]);
-
-  if (status === "loading") {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="text-lg">Loading...</div>
-      </div>
-    );
-  }
-
-  if (!session) {
-    return null;
-  }
 
   // Calculate the available content height
   const contentHeight = `calc(100vh - ${headerHeight}px - ${footerHeight}px)`;
@@ -76,7 +58,7 @@ export default function StreamingAPIDemo() {
               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-chevron-left"><path d="m15 18-6-6 6-6"/></svg>
               <span>Back to Dashboard</span>
             </Link>
-            <h1 className="text-2xl font-bold text-gray-900">OpenAI Streaming API Demo</h1>
+            <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
             <div className="w-24"></div> {/* Spacer for balance */}
           </div>
         </div>
@@ -91,9 +73,14 @@ export default function StreamingAPIDemo() {
           height: contentHeight
         }}
       >
-        {/* Full-width component */}
-        <div className="w-full overflow-hidden relative">
-          <StreamingDemo />
+        {/* Left side */}
+        <div className="w-1/2 border-r border-gray-200 overflow-hidden relative">
+          {leftContent}
+        </div>
+        
+        {/* Right side */}
+        <div className="w-1/2 overflow-hidden relative">
+          {rightContent}
         </div>
       </main>
 
@@ -124,4 +111,6 @@ export default function StreamingAPIDemo() {
       </footer>
     </div>
   );
-} 
+};
+
+export default DemoLayout; 
