@@ -4,6 +4,8 @@ import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 
 interface MessageProps {
@@ -82,6 +84,35 @@ const Message: React.FC<MessageProps> = ({ message }) => {
 
   const messageText = getMessageText();
 
+  // Prepare text for better markdown rendering
+  const prepareMarkdownText = (text: string) => {
+    // Fix issues with math expressions
+    let processedText = text
+      // Replace multiple newlines with just two (for paragraph breaks)
+      .replace(/\n{3,}/g, '\n\n')
+      // Ensure proper spacing for lists
+      .replace(/(\n)(\s*[-*+])/g, '$1$2')
+      // Fix inline math with backslashes
+      .replace(/\\times/g, '\\times')
+      .replace(/\\sqrt/g, '\\sqrt')
+      .replace(/\\sigma/g, '\\sigma')
+      .replace(/\\text/g, '\\text')
+      .replace(/\\frac/g, '\\frac')
+      // Ensure inline math expressions are properly formatted
+      .replace(/\\\(/g, '$')
+      .replace(/\\\)/g, '$')
+      // Ensure block math expressions are properly formatted
+      .replace(/\\\[/g, '$$')
+      .replace(/\\\]/g, '$$');
+      
+    // Remove truncation message if present
+    if (processedText.includes('[...stream truncated due to size...]')) {
+      processedText = processedText.replace('[...stream truncated due to size...]', '');
+    }
+    
+    return processedText;
+  };
+
   useEffect(() => {
     if (!messageText) {
       setDisplayedText("");
@@ -103,21 +134,40 @@ const Message: React.FC<MessageProps> = ({ message }) => {
       return;
     }
     
-    // Reset state for new message
-    setDisplayedText("");
-    setIsReady(true);
-    setIsThinking(true);
+    // If we already have partial message content (not empty), don't reset it to avoid flickering
+    const currentDisplayedLength = displayedText.length;
+    const shouldReset = currentDisplayedLength === 0;
+    
+    // Only reset state if we're starting from scratch
+    if (shouldReset) {
+      setDisplayedText("");
+      setIsReady(true);
+      setIsThinking(true);
+    } else {
+      // If we already have content, continue with it
+      setIsThinking(false);
+    }
+    
     isTypingRef.current = true;
 
     // Start typing animation after a brief delay
     const startTyping = () => {
       setIsThinking(false);
-      let visibleIndex = 0;
+      
+      // If we already have content and it's the same as the message text, don't retype
+      if (displayedText === messageText) {
+        isTypingRef.current = false;
+        markAsDisplayed();
+        return;
+      }
+      
+      // For continued streaming, start from the current position rather than the beginning
+      let visibleIndex = shouldReset ? 0 : currentDisplayedLength;
       
       const animateText = () => {
         if (visibleIndex < messageText.length) {
           setDisplayedText(messageText.slice(0, visibleIndex + 1));
-          visibleIndex++;
+          visibleIndex += 8; // Increase typing speed by processing more characters at once
           timeoutRef.current = setTimeout(animateText, 0);
         } else {
           isTypingRef.current = false;
@@ -129,8 +179,8 @@ const Message: React.FC<MessageProps> = ({ message }) => {
       animateText();
     };
 
-    // Brief initial delay
-    timeoutRef.current = setTimeout(startTyping, 500);
+    // Brief initial delay only if starting from scratch
+    timeoutRef.current = setTimeout(startTyping, shouldReset ? 100 : 0);
 
     return () => {
       if (timeoutRef.current) {
@@ -143,25 +193,25 @@ const Message: React.FC<MessageProps> = ({ message }) => {
 
   const MarkdownComponents = {
     h1({ children }: any) {
-      return <h1 className="text-2xl font-bold mt-6 mb-4 pb-2 border-b border-gray-200">{children}</h1>;
+      return <h1 className="text-2xl font-bold mt-6 mb-3">{children}</h1>;
     },
     h2({ children }: any) {
-      return <h2 className="text-xl font-semibold mt-5 mb-3">{children}</h2>;
+      return <h2 className="text-xl font-semibold mt-5 mb-2">{children}</h2>;
     },
     h3({ children }: any) {
       return <h3 className="text-lg font-medium mt-4 mb-2">{children}</h3>;
     },
     p({ children }: any) {
-      return <p className="mb-4 leading-relaxed">{children}</p>;
+      return <p className="mb-4 leading-relaxed whitespace-pre-line">{children}</p>;
     },
     ul({ children }: any) {
-      return <ul className="list-disc pl-6 mb-4">{children}</ul>;
+      return <ul className="list-disc pl-5 mb-4 ml-1 space-y-1">{children}</ul>;
     },
     ol({ children }: any) {
-      return <ol className="list-decimal pl-6 mb-4">{children}</ol>;
+      return <ol className="list-decimal pl-5 mb-4 ml-1 space-y-1">{children}</ol>;
     },
     li({ children }: any) {
-      return <li className="mb-1">{children}</li>;
+      return <li className="mb-1 pl-1">{children}</li>;
     },
     code({ node, inline, className, children, ...props }: any) {
       const match = /language-(\w+)/.exec(className || '');
@@ -172,21 +222,21 @@ const Message: React.FC<MessageProps> = ({ message }) => {
           style={oneDark}
           language={language}
           PreTag="div"
-          className="rounded-md"
+          className="rounded-md mb-4 overflow-hidden"
           {...props}
         >
           {String(children).replace(/\n$/, '')}
         </SyntaxHighlighter>
       ) : (
-        <code className="bg-gray-100 rounded px-1 py-0.5" {...props}>
+        <code className="bg-gray-100 rounded px-1 py-0.5 text-sm font-mono" {...props}>
           {children}
         </code>
       );
     },
     table({ children }: any) {
       return (
-        <div className="overflow-x-auto my-6 border rounded-lg shadow">
-          <table className="min-w-full divide-y divide-gray-300 table-fixed">
+        <div className="overflow-x-auto my-4 border rounded-lg">
+          <table className="min-w-full divide-y divide-gray-300">
             {children}
           </table>
         </div>
@@ -199,32 +249,34 @@ const Message: React.FC<MessageProps> = ({ message }) => {
       return <tbody className="bg-white divide-y divide-gray-200">{children}</tbody>;
     },
     tr({ children }: any) {
-      return <tr className="border-b border-gray-200 hover:bg-gray-50">{children}</tr>;
+      return <tr className="border-b border-gray-200">{children}</tr>;
     },
     th({ children }: any) {
       return (
-        <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 last:border-r-0">
+        <th className="px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase">
           {children}
         </th>
       );
     },
     td({ children }: any) {
-      return <td className="px-4 py-3 text-sm text-gray-700 border-r border-gray-200 last:border-r-0">{children}</td>;
+      return <td className="px-3 py-2 text-sm text-gray-700">{children}</td>;
     },
     blockquote({ children }: any) {
       return (
-        <blockquote className="border-l-4 border-gray-200 pl-4 my-4">
+        <blockquote className="border-l-4 border-gray-200 pl-4 my-4 italic">
           {children}
         </blockquote>
       );
     },
     em({ children }: any) {
-      // Render emphasized text (italics) as normal text
-      return <span>{children}</span>;
+      return <em className="italic">{children}</em>;
+    },
+    strong({ children }: any) {
+      return <strong className="font-bold">{children}</strong>;
     },
     a({ children, href }: any) {
       return (
-        <a href={href} className="text-blue-500 hover:text-blue-700 underline">
+        <a href={href} className="text-blue-600 hover:underline">
           {children}
         </a>
       );
@@ -235,7 +287,7 @@ const Message: React.FC<MessageProps> = ({ message }) => {
           <img 
             src={src} 
             alt={alt || 'Image'} 
-            className="max-w-full h-auto rounded-lg border border-gray-200 shadow-sm" 
+            className="max-w-full h-auto rounded-lg border border-gray-200" 
             style={{ maxHeight: '300px' }}
           />
           {alt && <p className="text-sm text-gray-500 mt-1 text-center">{alt}</p>}
@@ -249,13 +301,14 @@ const Message: React.FC<MessageProps> = ({ message }) => {
       <div className="text-base">
         <div className="flex justify-end">
           <div>
-            <div className="ml-4 rounded-[16px] px-4 py-2 md:ml-24 bg-[#ededed] text-stone-900 font-normal font-sans text-lg">
+            <div className="ml-4 rounded-[16px] px-4 py-2 md:ml-24 bg-[#ededed] text-stone-900 font-sans">
               <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
+                remarkPlugins={[remarkGfm, remarkMath]}
+                rehypePlugins={[rehypeKatex]}
                 components={MarkdownComponents}
-                className="prose prose-sm max-w-none"
+                className="prose max-w-none"
               >
-                {messageText}
+                {prepareMarkdownText(messageText)}
               </ReactMarkdown>
             </div>
           </div>
@@ -267,15 +320,16 @@ const Message: React.FC<MessageProps> = ({ message }) => {
   return (
     <div className="text-base">
       <div className="flex">
-        <div className="mr-4 rounded-[16px] px-4 py-2 md:mr-24 text-black bg-white font-normal font-sans text-lg">
-          <div className="whitespace-pre-wrap break-words">
+        <div className="mr-4 rounded-[16px] px-4 py-2 md:mr-24 text-black bg-white font-sans">
+          <div className="break-words">
             {isReady && (
               <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
+                remarkPlugins={[remarkGfm, remarkMath]}
+                rehypePlugins={[rehypeKatex]}
                 components={MarkdownComponents}
-                className="prose prose-sm max-w-none"
+                className="prose max-w-none"
               >
-                {displayedText}
+                {prepareMarkdownText(displayedText)}
               </ReactMarkdown>
             )}
           </div>

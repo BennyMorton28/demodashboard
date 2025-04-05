@@ -4,7 +4,7 @@ import Chat from "./chat";
 import { Item } from "@/lib/assistant";
 import PartialJSON from 'partial-json';
 
-export default function KaiAssistant() {
+export default function PotatoJacksonAssistant() {
   const [messages, setMessages] = useState<Item[]>([
     {
       type: "message",
@@ -12,7 +12,7 @@ export default function KaiAssistant() {
       id: `initial_greeting_${Date.now()}`,
       content: [{ 
         type: "output_text", 
-        text: "Hello! I'm Kai, Kellogg's AI assistant. I'm here to help with any questions about Kellogg School of Management programs, career advice, course selection, or general guidance for Kellogg students. How can I assist you today?" 
+        text: "Hello! I'm Potato Jackson. How can I help you today?" 
       }],
     }
   ]);
@@ -20,7 +20,6 @@ export default function KaiAssistant() {
   const responseTextRef = useRef('');
   const responseIdRef = useRef(`msg_${Date.now()}`);
   const [debugInfo, setDebugInfo] = useState('');
-  const [apiKeyStatus, setApiKeyStatus] = useState<{status: string, details?: any} | null>(null);
   const [showDebug, setShowDebug] = useState(false);
   
   // Add a buffer and timer for smoothing out state updates
@@ -144,13 +143,28 @@ export default function KaiAssistant() {
         }
       }
       
+      // Standard chatGPT delta format
+      if (parsedData.choices && Array.isArray(parsedData.choices) && parsedData.choices.length > 0) {
+        const choice = parsedData.choices[0];
+        if (choice.delta && choice.delta.content) {
+          deltaText = choice.delta.content;
+          console.log("EXTRACT DELTA: Found via choices[0].delta.content");
+          return deltaText;
+        }
+      }
+      
       // Fallback to deep search for complex structures
       const findDelta = (obj: any): string | null => {
         if (!obj || typeof obj !== 'object') return null;
         
         if (obj.delta) {
           return typeof obj.delta === 'string' ? obj.delta : 
-                 obj.delta.value ? obj.delta.value : null;
+                 obj.delta.value ? obj.delta.value : 
+                 obj.delta.content ? obj.delta.content : null;
+        }
+        
+        if (obj.content && typeof obj.content === 'string') {
+          return obj.content;
         }
         
         for (const key in obj) {
@@ -187,10 +201,10 @@ export default function KaiAssistant() {
     }
   };
 
-  const handleSendMessage = async (message: string, apiEndpoint = '/api/kai-chat') => {
+  const handleSendMessage = async (message: string) => {
     if (!message.trim()) return;
     
-    console.log("Sending message to Kai:", message);
+    console.log("Sending message to Potato Jackson:", message);
     setDebugInfo('Sending message...');
 
     // Create a unique ID for this message
@@ -231,24 +245,21 @@ export default function KaiAssistant() {
       responseIdRef.current = messageId;
       
       // Call our API endpoint with streaming
-      console.log("Fetching from /api/kai-chat");
+      console.log("Fetching from /api/chat");
       setDebugInfo(prev => prev + '\nFetching from API...');
       
-      const response = await fetch(apiEndpoint, {
+      const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ message: message.trim() }),
+        body: JSON.stringify({
+          message: message.trim(),
+          demoId: "potato-jackson"
+        }),
       });
       
       if (!response.ok) {
-        // Check for rate limit response
-        if (response.status === 429) {
-          const errorData = await response.json();
-          const waitMsg = errorData.message || "Please wait a moment before trying again.";
-          throw new Error(`Rate limit reached: ${waitMsg}`);
-        }
         throw new Error(`Failed to get response from assistant: ${response.status} ${response.statusText}`);
       }
       
@@ -261,6 +272,7 @@ export default function KaiAssistant() {
       
       const decoder = new TextDecoder();
       let chunkCount = 0;
+      let unprocessedChunk = ''; // Store partial chunks between reads
       
       // Process the stream
       while (true) {
@@ -268,6 +280,35 @@ export default function KaiAssistant() {
         if (done) {
           console.log("Stream reading complete");
           setDebugInfo(prev => prev + '\nStream reading complete');
+          
+          // Process any remaining unprocessed chunk at the end to avoid cutoffs
+          if (unprocessedChunk.trim().length > 0) {
+            console.log("Processing final unprocessed chunk:", unprocessedChunk);
+            try {
+              // Try to find any meaningful text in the final chunk
+              const finalText = unprocessedChunk.replace(/^data:\s*/, '').trim();
+              if (finalText && finalText !== '[DONE]') {
+                // Try to extract meaningful content if possible
+                try {
+                  const parsedFinal = JSON.parse(finalText);
+                  const finalDelta = extractDeltaText(parsedFinal);
+                  if (finalDelta) {
+                    responseTextRef.current += finalDelta;
+                    updateMessageContent(responseTextRef.current, responseIdRef.current);
+                  }
+                } catch (e) {
+                  // If we can't parse as JSON, just use the text directly if it's not empty
+                  if (finalText.length > 3 && !finalText.includes('"event":"done"')) {
+                    responseTextRef.current += ` ${finalText.replace(/["{}\[\]]/g, '')}`;
+                    updateMessageContent(responseTextRef.current, responseIdRef.current);
+                  }
+                }
+              }
+            } catch (finalChunkError) {
+              console.error("Error processing final chunk:", finalChunkError);
+            }
+          }
+          
           break;
         }
         
@@ -277,17 +318,21 @@ export default function KaiAssistant() {
         console.log(`Received chunk ${chunkCount}:`, chunk.length > 100 ? chunk.slice(0, 100) + "..." : chunk);
         setDebugInfo(prev => prev + `\nChunk ${chunkCount}: ${chunk.length} bytes`);
         
+        // Add this chunk to any unprocessed data from previous reads
+        const fullChunk = unprocessedChunk + chunk;
+        unprocessedChunk = '';
+        
         // Process chunk more carefully, in case it's split across multiple 'data:' lines
         try {
           // Split the chunk by data: but keep track of partial chunks
-          let processedChunk = chunk;
-          let partialLine = '';
+          let processedChunk = fullChunk;
           
           // Check if the chunk starts with a partial line (no 'data: ' prefix)
-          if (!chunk.trimStart().startsWith('data: ')) {
+          if (!fullChunk.trimStart().startsWith('data: ')) {
+            // If it doesn't start with 'data:', it might be an incomplete chunk
             console.log("Found partial chunk at start, buffering");
             setDebugInfo(prev => prev + '\nBuffering partial chunk start');
-            partialLine = chunk;
+            unprocessedChunk = fullChunk;
             continue; // Skip to next chunk
           }
           
@@ -298,7 +343,15 @@ export default function KaiAssistant() {
           
           setDebugInfo(prev => prev + `\nFound ${validEvents.length} data events in chunk`);
           
-          for (const eventData of validEvents) {
+          for (let i = 0; i < validEvents.length; i++) {
+            const eventData = validEvents[i];
+            // Check if this is the last event and doesn't end with a newline - it might be incomplete
+            if (i === validEvents.length - 1 && !eventData.endsWith('\n\n')) {
+              unprocessedChunk = 'data: ' + eventData;
+              console.log("Found potential partial chunk at end, buffering:", unprocessedChunk.length);
+              continue;
+            }
+            
             // Clean up the event data by removing any trailing newlines
             const cleanEventData = eventData.replace(/\n\n$/, '');
             
@@ -335,8 +388,10 @@ export default function KaiAssistant() {
                 setDebugInfo(prev => prev + `\nEvent: ${parsedData.event}`);
               }
               
-              // Handle text events
-              if (parsedData && parsedData.event === 'response.output_text.delta') {
+              // Handle text events - support both OpenAI delta format and standard chat completion format
+              if (parsedData && 
+                  (parsedData.event === 'response.output_text.delta' || 
+                   (parsedData.choices && parsedData.choices.length > 0))) {
                 try {
                   // Try to extract delta text with our helper function
                   const textDelta = extractDeltaText(parsedData);
@@ -436,92 +491,21 @@ export default function KaiAssistant() {
     }
   };
 
-  // Sample conversation starters specific to Kellogg
-  const kaiStarters = [
-    "Can you tell me about Kellogg's MBA programs?",
-    "What are some career paths for Kellogg graduates?",
-    "How should I prepare for recruiting season?",
-    "What electives would you recommend for someone interested in marketing?"
-  ];
-
-  // Add this function to test the API key directly
-  const testApiKey = async () => {
-    setApiKeyStatus({status: 'testing'});
-    try {
-      const response = await fetch('/api/test-openai');
-      const data = await response.json();
-      
-      if (data.success) {
-        setApiKeyStatus({
-          status: 'valid', 
-          details: {
-            message: data.message,
-            models: data.models,
-            keyInfo: data.keyInfo
-          }
-        });
-      } else {
-        setApiKeyStatus({
-          status: 'invalid',
-          details: {
-            error: data.error,
-            message: data.message
-          }
-        });
-      }
-    } catch (error) {
-      setApiKeyStatus({
-        status: 'error',
-        details: {error: error instanceof Error ? error.message : 'Unknown error'}
-      });
-    }
-  };
-
   return (
     <div className="h-full w-full flex flex-col overflow-hidden">
       {/* Assistant Info Header - Fixed */}
       <div className="flex-shrink-0 px-4 py-3 border-b border-gray-200 bg-white">
         <div className="flex justify-between items-center">
           <div>
-            <h2 className="text-lg font-semibold">Kai (Kellogg AI)</h2>
-            <p className="text-sm text-gray-600">Your Kellogg student assistant</p>
+            <h2 className="text-lg font-semibold">Potato Jackson</h2>
+            <p className="text-sm text-gray-600">Your kai helper but unique</p>
           </div>
-        </div>
-        
-        {/* Debug Panel - Hidden by default */}
-        {showDebug && (
-          <div className="mt-2 p-2 bg-gray-100 rounded text-xs">
-            <div className="flex flex-wrap gap-2 mb-2">
-              <button 
-                onClick={testApiKey} 
-                className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
-              >
-                Test API Key
-              </button>
-              
-              <button 
-                onClick={() => {
-                  setApiKeyStatus({status: 'trying_alt', details: {message: "Trying the alternate API route..."}});
-                  handleSendMessage("Hello, using alternate API", "/api/kai-chat-alt");
-                }} 
-                className="px-2 py-1 bg-blue-100 rounded hover:bg-blue-200"
-              >
-                Try Alt API (GPT-3.5)
-              </button>
+          {showDebug && (
+            <div className="text-xs text-gray-500 mt-1 overflow-auto max-h-20 p-1 border rounded">
+              {debugInfo}
             </div>
-            
-            {apiKeyStatus && (
-              <div className="mt-2">
-                <p><strong>Status:</strong> {apiKeyStatus.status}</p>
-                {apiKeyStatus.details && (
-                  <pre className="mt-1 p-1 bg-gray-200 rounded max-h-20 overflow-auto">
-                    {JSON.stringify(apiKeyStatus.details, null, 2)}
-                  </pre>
-                )}
-              </div>
-            )}
-          </div>
-        )}
+          )}
+        </div>
       </div>
       
       {/* Chat Component - Takes remaining height */}
@@ -531,13 +515,13 @@ export default function KaiAssistant() {
           onSendMessage={handleSendMessage}
           isLoading={isLoading}
           starters={[
-            "Can you tell me about Kellogg's MBA program?",
-            "What career resources are available for students?",
-            "How can I best prepare for my marketing class?",
-            "Tell me about student clubs at Kellogg"
+            "Tell me about the operations management course",
+            "What are the key formulas we need to know?",
+            "Can you explain the safety stock calculation?",
+            "How do I calculate cycle service level?"
           ]}
         />
       </div>
     </div>
   );
-} 
+}

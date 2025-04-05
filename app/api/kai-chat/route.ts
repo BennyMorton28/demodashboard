@@ -12,10 +12,10 @@ if (process.env.OPENAI_API_KEY) {
   console.log(`- OPENAI_API_KEY from env: Not set`);
 }
 
-// Create an OpenAI client instance with API key and organization ID
+// Create an OpenAI client instance with API key only, no organization specified
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
-  // Remove organization specification to let OpenAI use the organization associated with the API key
+  // Don't specify organization, let OpenAI use the organization associated with the API key
 });
 
 // Debug info - Inspect the actual configuration the OpenAI client is using
