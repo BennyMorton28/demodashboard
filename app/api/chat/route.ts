@@ -1,65 +1,156 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { OpenAI } from 'openai';
+import { Readable } from 'stream';
+import fs from 'fs';
+import path from 'path';
+import { existsSync } from 'fs';
 
-// Simple response generator function - in a real app, this would call an AI service
-function generateResponse(message: string): string {
-  // List of possible responses based on keywords
-  const responses = [
-    {
-      keywords: ['hello', 'hi', 'hey', 'greetings'],
-      response: 'Hello! How can I help you today with the knowledge base?'
-    },
-    {
-      keywords: ['about', 'who', 'what is'],
-      response: 'Knowledge Assistant is a platform that combines AI chat support with a markdown content display. You can ask me questions about the content displayed on the right.'
-    },
-    {
-      keywords: ['features', 'capabilities', 'can you', 'do you'],
-      response: 'I can help answer questions about the content shown in the knowledge base. I can explain concepts, summarize information, and provide additional details on topics covered in the documentation.'
-    },
-    {
-      keywords: ['how to', 'how do i', 'usage', 'use'],
-      response: 'To use this assistant effectively, simply ask me questions related to the content displayed on the right. You can also switch between different content sections using the navigation buttons at the top of the content area.'
-    }
-  ];
+// Initialize OpenAI client
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+  organization: process.env.OPENAI_ORG_ID,
+});
 
-  // Check if the message contains any keywords
-  for (const item of responses) {
-    if (item.keywords.some(keyword => message.toLowerCase().includes(keyword))) {
-      return item.response;
-    }
-  }
-
-  // Default response if no keywords match
-  return `I see you're asking about "${message}". The information might be available in the knowledge base section on the right. If you have specific questions about that content, I'd be happy to help explain it.`;
-}
-
-export async function POST(request: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const data = await request.json();
-    const { message } = data;
+    // Get the message and demo ID from the request
+    const { message, demoId = 'knowledge-assistant' } = await req.json();
     
     if (!message) {
-      return NextResponse.json(
-        { error: 'Message is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Message is required' }, { status: 400 });
     }
+
+    // Get the system prompt for the specified demo
+    const systemPrompt = await getSystemPrompt(demoId);
     
-    // In a real implementation, you would call your AI service here
-    // For now, just generate a simple response
-    const response = generateResponse(message);
+    // Create a stream to write the response
+    const stream = new TransformStream();
+    const writer = stream.writable.getWriter();
     
-    // Simulate a delay to make it feel more natural
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    return NextResponse.json({
-      response: response
+    // Create a streaming response
+    const streamingResponse = new NextResponse(stream.readable, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      },
     });
+    
+    // Start the OpenAI streaming request in the background
+    streamOpenAIResponse(message, systemPrompt, writer).catch(error => {
+      console.error('Error in OpenAI streaming:', error);
+      writer.write(
+        encoder.encode(
+          `data: ${JSON.stringify({
+            event: 'error',
+            data: { message: error.message || 'Unknown error occurred' },
+          })}\n\n`
+        )
+      );
+      writer.close();
+    });
+    
+    return streamingResponse;
   } catch (error) {
-    console.error('Error processing chat request:', error);
+    console.error('Error in chat route:', error);
     return NextResponse.json(
-      { error: 'Failed to process request' },
+      { error: 'An error occurred while processing your request' },
       { status: 500 }
     );
+  }
+}
+
+// Helper function to get the system prompt for a demo
+async function getSystemPrompt(demoId: string): Promise<string> {
+  // First, look for a custom prompt file
+  const promptFilePath = path.join(process.cwd(), 'lib', 'prompts', `${demoId}-prompt.md`);
+  
+  if (existsSync(promptFilePath)) {
+    return fs.readFileSync(promptFilePath, 'utf-8');
+  }
+  
+  // Fallback prompts for built-in demos
+  switch (demoId) {
+    case 'knowledge-assistant':
+      return `
+        You are a helpful Knowledge Assistant that answers questions about the content displayed on the right side of the screen.
+        
+        Your primary purpose is to:
+        1. Help users understand the information being displayed
+        2. Answer questions about the content
+        3. Guide users to relevant sections if they're looking for specific information
+        4. Provide additional context or explanations when needed
+        
+        Approach all questions with a helpful, informative tone. If asked about information not available in the displayed content, politely suggest checking the available tabs or asking a question related to the current content.
+        
+        Avoid making up information that isn't supported by the content. If you're unsure about something, acknowledge this and suggest where the user might find that information.
+      `;
+    case 'kai':
+      return fs.readFileSync(path.join(process.cwd(), 'lib', 'prompts', 'kai-prompt.md'), 'utf-8');
+    default:
+      return `
+        You are a helpful AI assistant. Answer the user's questions thoroughly and accurately.
+        If you don't know something, be honest about it rather than making up information.
+      `;
+  }
+}
+
+// Text encoder to convert strings to Uint8Array
+const encoder = new TextEncoder();
+
+// Helper function to stream OpenAI response
+async function streamOpenAIResponse(message: string, systemPrompt: string, writer: WritableStreamDefaultWriter<any>) {
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: message }
+      ],
+      stream: true,
+    });
+    
+    let fullResponse = '';
+    
+    // Process each chunk as it arrives
+    for await (const chunk of completion) {
+      // Extract the text from the chunk
+      const content = chunk.choices[0]?.delta?.content || '';
+      fullResponse += content;
+      
+      // Format the chunk for SSE
+      const event = {
+        event: 'response.output_text.delta', 
+        data: {
+          type: 'response.output_text.delta',
+          delta: content,
+        },
+      };
+      
+      // Write the formatted chunk to the stream
+      writer.write(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+    }
+    
+    // Send an 'done' event
+    writer.write(
+      encoder.encode(
+        `data: ${JSON.stringify({
+          event: 'done',
+          data: {},
+        })}\n\n`
+      )
+    );
+  } catch (error: any) {
+    console.error('Error in OpenAI request:', error);
+    writer.write(
+      encoder.encode(
+        `data: ${JSON.stringify({
+          event: 'error',
+          data: { message: error.message || 'Unknown error occurred' },
+        })}\n\n`
+      )
+    );
+  } finally {
+    writer.close();
   }
 } 

@@ -7,17 +7,21 @@ import Annotations from "./annotations";
 import { Item } from "@/lib/assistant";
 
 interface ChatProps {
-  items: Item[];
+  items?: Item[];
+  messages?: Item[];
   onSendMessage: (message: string) => void;
   isLoading?: boolean;
   starters?: string[];
 }
 
-const Chat: React.FC<ChatProps> = ({ items, onSendMessage, isLoading = false, starters }) => {
+const Chat: React.FC<ChatProps> = ({ items, messages, onSendMessage, isLoading = false, starters }) => {
   const itemsEndRef = useRef<HTMLDivElement>(null);
   const [inputMessageText, setinputMessageText] = useState<string>("");
   // This state is used to provide better user experience for non-English IMEs such as Japanese
   const [isComposing, setIsComposing] = useState(false);
+  
+  // Use messages prop if items is not provided
+  const chatItems = items || messages || [];
 
   const scrollToBottom = () => {
     itemsEndRef.current?.scrollIntoView({ behavior: "instant" });
@@ -33,7 +37,7 @@ const Chat: React.FC<ChatProps> = ({ items, onSendMessage, isLoading = false, st
 
   useEffect(() => {
     scrollToBottom();
-  }, [items]);
+  }, [chatItems]);
 
   // Use custom starters if provided, otherwise use default ones
   const conversationStarters = starters || [
@@ -48,7 +52,7 @@ const Chat: React.FC<ChatProps> = ({ items, onSendMessage, isLoading = false, st
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto">
         <div className="px-4 py-4 space-y-4 mx-auto max-w-4xl">
-          {items.length === 0 && (
+          {chatItems.length === 0 && (
             <div className="py-8">
               <h3 className="text-lg font-medium text-gray-900 mb-4">Get started by asking a question:</h3>
               <div className="grid grid-cols-1 gap-2">
@@ -65,7 +69,7 @@ const Chat: React.FC<ChatProps> = ({ items, onSendMessage, isLoading = false, st
             </div>
           )}
           
-          {items.map((item, index) => (
+          {chatItems.map((item, index) => (
             <React.Fragment key={index}>
               {item.type === "tool_call" ? (
                 <ToolCall toolCall={item} />
@@ -73,8 +77,8 @@ const Chat: React.FC<ChatProps> = ({ items, onSendMessage, isLoading = false, st
                 <div className="flex flex-col gap-1 w-full">
                   <Message message={item} />
                   {item.content &&
-                    item.content[0].annotations &&
-                    item.content[0].annotations.length > 0 && (
+                    item.content[0]?.annotations &&
+                    item.content[0]?.annotations?.length > 0 && (
                       <Annotations
                         annotations={item.content[0].annotations}
                       />
