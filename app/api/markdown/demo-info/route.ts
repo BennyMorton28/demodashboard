@@ -76,8 +76,8 @@ export async function GET(request: Request) {
 function getLegacyDemoContent(demoId: string, section: string): string {
   // Legacy demo content - in a real application this would be moved to separate files
   const demoInfoSamples: Record<string, Record<string, string>> = {
-    "knowledge-assistant": {
-      default: `
+  "knowledge-assistant": {
+    default: `
 # Knowledge Assistant Demo
 
 This demo showcases an AI assistant that can answer questions about the content displayed on the right side of the screen.
@@ -113,7 +113,7 @@ This demo is built using:
 - API routes for backend functionality
 `,
 
-      prompt: `
+    prompt: `
 # The Knowledge Assistant Prompt
 
 The assistant uses the following system prompt to guide its responses:
@@ -135,7 +135,7 @@ Avoid making up information that isn't supported by the content. If you're unsur
 This prompt ensures the assistant stays focused on helping with the content while providing a good user experience.
 `,
 
-      implementation: `
+    implementation: `
 # Implementation Details
 
 ## Frontend Components
@@ -187,9 +187,9 @@ Potential enhancements include:
 - Supporting multimedia content in the knowledge base
 - Implementing user preferences and history
 `
-    },
-    "kai": {
-      default: `
+  },
+  "kai": {
+    default: `
 # Kai (Kellogg AI) Assistant
 
 Kai is an AI assistant designed specifically to support Kellogg School of Management students, staff, and faculty with a wide range of needs.
@@ -222,7 +222,7 @@ Kai combines comprehensive knowledge about Kellogg's programs, resources, polici
 
 Kai represents a new way to engage with and access the wealth of knowledge and resources available at Kellogg School of Management.
 `,
-      prompt: `
+    prompt: `
 # Kai's System Prompt
 
 Kai is powered by a carefully crafted system prompt that defines its personality, knowledge scope, and interaction style:
@@ -249,7 +249,7 @@ Remember that you represent Kellogg School of Management in every interaction.
 
 This prompt ensures that Kai maintains Kellogg's professional standards while providing helpful, accurate information that serves the specific needs of the Kellogg community.
 `,
-      implementation: `
+    implementation: `
 # Implementation Details
 
 ## Specialized Knowledge Base
@@ -303,9 +303,9 @@ Potential improvements include:
 - Alumni networking features
 - Multilingual support for international students
 `
-    }
-  };
-  
+  }
+};
+
   // For brevity, I've only included "knowledge-assistant" and "kai" demos
   // Add more legacy demos as needed
   

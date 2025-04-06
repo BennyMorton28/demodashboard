@@ -551,6 +551,7 @@ export default function ${componentName}Assistant() {
   // Add a buffer size threshold before showing any text
   const INITIAL_BUFFER_SIZE = 20; // Only start showing text once we have at least 20 chars
   const hasStartedStreamingRef = useRef(false);
+  const incompleteMessageFlagRef = useRef(false);
 
   // Function to update message content with rate limiting
   const updateMessageContent = (text: string, messageId: string) => {
@@ -755,7 +756,7 @@ export default function ${componentName}Assistant() {
           extractJson.event = eventMatch[1];
         }
         
-        const deltaMatch = jsonStr.match(/"delta"\s*:\\s*"([^"]*)"/);
+        const deltaMatch = jsonStr.match(/"delta"\s*:\s*"([^"]*)"/);
         if (deltaMatch && deltaMatch[1]) {
           extractJson.data = { delta: deltaMatch[1] };
         }
@@ -785,6 +786,7 @@ export default function ${componentName}Assistant() {
       setIsLoading(true);
       // Reset streaming flag for new message
       hasStartedStreamingRef.current = false;
+      incompleteMessageFlagRef.current = false;
       
       // Add user message to the list
       setMessages(prev => [...prev, userItem]);
@@ -828,24 +830,108 @@ export default function ${componentName}Assistant() {
       if (!reader) throw new Error('Failed to get stream reader');
       
       const decoder = new TextDecoder();
+      let chunkCount = 0;
       let unprocessedChunk = ''; // Store partial chunks between reads
       
       // Process the stream
       while (true) {
         const { done, value } = await reader.read();
+        
         if (done) {
+          // Check if the message appears incomplete (e.g., missing closing tags, brackets)
+          const finalText = responseTextRef.current;
+          
+          if (finalText) {
+            if (finalText.includes('```') && (finalText.match(/\`\`\`/g) || []).length % 2 !== 0) {
+              // Add closing code block if there's an odd number (meaning one is unclosed)
+              responseTextRef.current += '\\n```';
+              updateMessageContent(responseTextRef.current, responseIdRef.current);
+            }
+            
+            // Process any remaining unprocessed chunk at the end
+            if (unprocessedChunk.trim().length > 0) {
+              try {
+                // Try to find any meaningful text in the final chunk
+                const finalChunkText = unprocessedChunk.replace(/^data:\s*/, '').trim();
+                if (finalChunkText && finalChunkText !== '[DONE]') {
+                  try {
+                    // Try to parse as JSON or extract content
+                    let finalDelta = '';
+                    
+                    try {
+                      const parsedFinal = JSON.parse(finalChunkText);
+                      finalDelta = extractDeltaText(parsedFinal);
+                    } catch (e) {
+                      try {
+                        // Try partial JSON
+                        const partialParsed = PartialJSON.parse(finalChunkText);
+                        finalDelta = extractDeltaText(partialParsed);
+                      } catch (partialError) {
+                        // Try regex extraction
+                        const deltaMatch = finalChunkText.match(/"delta"\s*:\s*"([^"]*)"/);
+                        if (deltaMatch && deltaMatch[1]) {
+                          finalDelta = deltaMatch[1];
+                        }
+                      }
+                    }
+                    
+                    if (finalDelta) {
+                      responseTextRef.current += finalDelta;
+                      updateMessageContent(responseTextRef.current, responseIdRef.current);
+                    }
+                  } catch (finalParseError) {
+                    // Ignore parsing errors in final chunk
+                  }
+                }
+              } catch (finalChunkError) {
+                // Ignore errors in final chunk processing
+              }
+            }
+            
+            // Check for other unclosed elements
+            // Unclosed markdown formatting
+            const asterisks = (finalText.match(/\\*/g) || []).length;
+            if (asterisks % 2 !== 0) {
+              responseTextRef.current += '*';
+              updateMessageContent(responseTextRef.current, responseIdRef.current);
+            }
+            
+            // Unclosed math blocks
+            const mathBlocks = (finalText.match(/\$\$/g) || []).length;
+            if (mathBlocks % 2 !== 0) {
+              responseTextRef.current += ' $$';
+              updateMessageContent(responseTextRef.current, responseIdRef.current);
+            }
+          }
+          
           break;
         }
         
         // Decode the chunk
         const chunk = decoder.decode(value, { stream: true });
+        chunkCount++;
+        
+        // Check for potential incomplete responses
+        if (chunkCount > 5 && chunk.includes('delta') && !chunk.includes('[DONE]')) {
+          incompleteMessageFlagRef.current = true;
+        }
         
         // Add this chunk to any unprocessed data from previous reads
         const fullChunk = unprocessedChunk + chunk;
         unprocessedChunk = '';
         
         // Split the chunk by data: but keep track of partial chunks
-        const dataEvents = fullChunk.split('data: ');
+        let processedChunk = fullChunk;
+        
+        // Check if the chunk starts with a partial line (no 'data: ' prefix)
+        if (!fullChunk.trimStart().startsWith('data: ')) {
+          // If it doesn't start with 'data:', it might be an incomplete chunk
+          unprocessedChunk = fullChunk;
+          continue; // Skip to next chunk
+        }
+        
+        // Handle multiple data: events in a single chunk
+        const dataEvents = processedChunk.split('data: ');
         // Filter out empty strings (from the split)
         const validEvents = dataEvents.filter(event => event.trim().length > 0);
         
@@ -872,15 +958,33 @@ export default function ${componentName}Assistant() {
             try {
               parsedData = JSON.parse(cleanEventData);
             } catch (standardJsonError) {
+              // If standard parsing fails, try alternative methods
               try {
                 // Try to use PartialJSON if available
                 parsedData = PartialJSON.parse(cleanEventData);
               } catch (partialJsonError) {
-                // Last resort: manual JSON fix
-                parsedData = attemptJSONFix(cleanEventData);
+                // Last resort, try to extract text with regex directly
+                try {
+                  parsedData = attemptJSONFix(cleanEventData);
+                } catch (fixError) {
+                  // Final attempt with regex extraction
+                  const deltaMatch = cleanEventData.match(/"delta"\s*:\s*"([^"]*)"/);
+                  if (deltaMatch && deltaMatch[1]) {
+                    // Create a minimal structure matching what we expect
+                    parsedData = {
+                      event: "response.output_text.delta",
+                      data: {
+                        delta: deltaMatch[1]
+                      }
+                    };
+                  } else {
+                    continue; // Skip this event if we can't parse it
+                  }
+                }
               }
             }
             
+            // Process the parsed data
             if (parsedData) {
               const textDelta = extractDeltaText(parsedData);
               if (textDelta) {
@@ -891,6 +995,7 @@ export default function ${componentName}Assistant() {
               }
             }
           } catch (parseError) {
+            // If all parsing attempts fail, just log the error and continue
             console.error('Error parsing event data:', parseError);
           }
         }

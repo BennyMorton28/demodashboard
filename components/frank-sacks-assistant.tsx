@@ -111,6 +111,23 @@ export default function FrankSacksAssistant() {
       if (pendingUpdateRef.current !== textToUpdate) {
         updateMessageContent(pendingUpdateRef.current, messageId);
       }
+      
+      // Force a scroll check after content update
+      try {
+        // Find all message containers and scroll to bottom if near end
+        const messagesContainer = document.querySelector('.overflow-y-auto');
+        if (messagesContainer) {
+          const { scrollHeight, scrollTop, clientHeight } = messagesContainer;
+          const bottomThreshold = 200;
+          
+          if (scrollHeight - scrollTop - clientHeight < bottomThreshold) {
+            const messageEnd = document.querySelector('[ref="messagesEndRef"]');
+            messageEnd?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+          }
+        }
+      } catch (error) {
+        // Ignore scroll errors
+      }
     }, 10);
   };
 
@@ -408,12 +425,14 @@ export default function FrankSacksAssistant() {
       
       {/* Chat Component - Takes remaining height with proper container */}
       <div 
-        className="flex-1 overflow-hidden relative" 
+        className="flex-1 overflow-visible relative" 
         style={{ 
           minHeight: 0,
           display: "flex",
           flexDirection: "column",
-          position: "relative"
+          position: "relative",
+          paddingBottom: "20px",
+          overflow: "visible"
         }}
       >
         <Chat 

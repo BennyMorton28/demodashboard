@@ -117,12 +117,15 @@ const Message: React.FC<MessageProps> = ({ message }) => {
       .replace(/\n{3,}/g, '\n\n')
       // Ensure proper spacing for lists
       .replace(/(\n)(\s*[-*+])/g, '$1$2')
-      // Fix inline math with backslashes
-      .replace(/\\times/g, '\\times')
-      .replace(/\\sqrt/g, '\\sqrt')
-      .replace(/\\sigma/g, '\\sigma')
-      .replace(/\\text/g, '\\text')
-      .replace(/\\frac/g, '\\frac')
+      // Fix inline math with proper LaTeX spacing
+      .replace(/\\(?:times|sqrt|sigma|frac|alpha|beta|gamma|delta|mu|pi|theta)/g, (match) => `${match} `)
+      // Fix LaTeX text command to use proper braces
+      .replace(/\\text\{(%.*?)\}/g, '\\text{$1}')
+      .replace(/\\text(%.*?)(?:\s|$)/g, '\\text{$1} ')
+      .replace(/\\beta_(\d+)/g, '\\beta_{$1}')
+      .replace(/\\text\{%\s+fraud\}/g, '\\text{\\% fraud}')
+      // Fix any LaTeX commands that might be missing spaces
+      .replace(/\\text(?!\{)/g, '\\text ')
       // Fix common math notation issues
       .replace(/\\_/g, '\\_')
       .replace(/\\{/g, '\\{')
@@ -132,7 +135,9 @@ const Message: React.FC<MessageProps> = ({ message }) => {
       .replace(/\\\)/g, '$')
       // Ensure block math expressions are properly formatted
       .replace(/\\\[/g, '$$')
-      .replace(/\\\]/g, '$$');
+      .replace(/\\\]/g, '$$')
+      // Remove trailing special characters before the end of message
+      .replace(/\s*[\*_]\s*$/, '');
       
     // Remove truncation message if present
     if (processedText.includes('[...stream truncated due to size...]')) {
@@ -142,13 +147,13 @@ const Message: React.FC<MessageProps> = ({ message }) => {
     // Fix for unbalanced asterisks (bold/italic)
     const asterisksCount = (processedText.match(/\*/g) || []).length;
     if (asterisksCount % 2 !== 0) {
-      processedText += '*';
+      processedText = processedText.replace(/\*\s*$/, '');
     }
 
     // Fix for unbalanced underscores (also used for italic/bold in markdown)
     const underscoresCount = (processedText.match(/_(?!\{)/g) || []).length;
     if (underscoresCount % 2 !== 0) {
-      processedText += '_';
+      processedText = processedText.replace(/_\s*$/, '');
     }
     
     return processedText;
@@ -231,6 +236,39 @@ const Message: React.FC<MessageProps> = ({ message }) => {
       setIsThinking(false);
     };
   }, [messageText, message.role]);
+
+  // Force re-rendering of math expressions after messages have been displayed
+  useEffect(() => {
+    if (displayedText.includes('$$') || displayedText.includes('$') || 
+        displayedText.includes('\\text') || displayedText.includes('\\beta')) {
+      // Force a small delay to allow KaTeX to render properly
+      const timer = setTimeout(() => {
+        // Force container reflow so content is fully visible
+        try {
+          const container = document.querySelector('.overflow-y-auto');
+          if (container) {
+            container.scrollTop = container.scrollTop + 1;
+            setTimeout(() => {
+              container.scrollTop = container.scrollTop - 1;
+              
+              // Additional check to ensure scrolling to bottom if needed
+              const { scrollHeight, scrollTop, clientHeight } = container;
+              const bottomThreshold = 200;
+              
+              if (scrollHeight - scrollTop - clientHeight < bottomThreshold) {
+                const messageEndEl = document.querySelector('[ref="messagesEndRef"]');
+                messageEndEl?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+              }
+            }, 100);
+          }
+        } catch (error) {
+          // Ignore errors related to DOM manipulation
+        }
+      }, 300);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [displayedText]);
 
   const MarkdownComponents = {
     h1({ children }: any) {
@@ -361,14 +399,14 @@ const Message: React.FC<MessageProps> = ({ message }) => {
   return (
     <div className="text-base">
       <div className="flex">
-        <div className="mr-4 rounded-[16px] px-4 py-2 md:mr-24 text-black bg-white font-sans">
-          <div className="break-words">
+        <div className="mr-4 rounded-[16px] px-4 py-2 md:mr-24 text-black bg-white font-sans max-w-full">
+          <div className="break-words overflow-visible pb-1">
             {isReady && (
               <ReactMarkdown
                 remarkPlugins={[remarkGfm, remarkMath]}
                 rehypePlugins={[rehypeKatex]}
                 components={MarkdownComponents}
-                className="prose max-w-none"
+                className="prose max-w-none overflow-hidden"
               >
                 {prepareMarkdownText(displayedText)}
               </ReactMarkdown>

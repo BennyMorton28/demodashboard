@@ -3,6 +3,10 @@
 import React, { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useRouter, usePathname } from 'next/navigation';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 
 interface DemoMarkdownDisplayProps {
   demoId?: string;
@@ -73,7 +77,11 @@ const DemoMarkdownDisplay: React.FC<DemoMarkdownDisplayProps> = ({ demoId }) => 
           </div>
         ) : (
           <div className="p-8 pb-20 max-w-3xl mx-auto">
-            <ReactMarkdown className="prose prose-slate max-w-none">
+            <ReactMarkdown 
+              className="prose prose-slate max-w-none"
+              remarkPlugins={[remarkGfm, remarkMath]}
+              rehypePlugins={[rehypeKatex]}
+            >
               {content}
             </ReactMarkdown>
           </div>

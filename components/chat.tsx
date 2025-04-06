@@ -51,10 +51,13 @@ const Chat: React.FC<ChatProps> = ({ items, messages, onSendMessage, isLoading =
   const scrollToBottom = useCallback(() => {
     if (messagesEndRef.current) {
       try {
-        messagesEndRef.current.scrollIntoView({ 
-          behavior: "smooth", 
-          block: "end" 
-        });
+        // Use a small delay to ensure DOM has updated
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ 
+            behavior: "smooth", 
+            block: "end" 
+          });
+        }, 50);
       } catch (error) {
         console.error("Error scrolling to bottom:", error);
       }
@@ -75,6 +78,33 @@ const Chat: React.FC<ChatProps> = ({ items, messages, onSendMessage, isLoading =
     scrollToBottom();
   }, [chatItems, scrollToBottom]);
 
+  // Ensure we scroll after each message update
+  useEffect(() => {
+    scrollToBottom();
+  }, [chatItems, scrollToBottom]);
+  
+  // Additional scroll check when content updates
+  useEffect(() => {
+    const checkScroll = () => {
+      if (messagesContainerRef.current) {
+        const { scrollHeight, scrollTop, clientHeight } = messagesContainerRef.current;
+        const bottomThreshold = 200; // Pixels from bottom to trigger auto-scroll
+        
+        if (scrollHeight - scrollTop - clientHeight < bottomThreshold) {
+          scrollToBottom();
+        }
+      }
+    };
+    
+    // Check on resize and when content potentially changes
+    window.addEventListener('resize', checkScroll);
+    
+    // Cleanup
+    return () => {
+      window.removeEventListener('resize', checkScroll);
+    };
+  }, [scrollToBottom]);
+
   // Use custom starters if provided, otherwise use default ones
   const conversationStarters = starters || [
     "Can you explain the main points of the displayed content?",
@@ -90,7 +120,7 @@ const Chat: React.FC<ChatProps> = ({ items, messages, onSendMessage, isLoading =
         ref={messagesContainerRef} 
         className="flex-1 overflow-y-auto"
         style={{ 
-          paddingBottom: "100px", // Increased padding to ensure enough space
+          paddingBottom: "150px", // Increased padding to ensure enough space
           height: "100%",
           position: "relative"
         }} 
@@ -157,12 +187,12 @@ const Chat: React.FC<ChatProps> = ({ items, messages, onSendMessage, isLoading =
             </div>
           )}
           
-          <div ref={messagesEndRef} />
+          <div ref={messagesEndRef} style={{ marginBottom: "30px" }} />
         </div>
       </div>
 
       {/* Message Input - Fixed at bottom with improved positioning */}
-      <div className="absolute bottom-0 left-0 right-0 py-2 px-3 border-t border-gray-200 bg-white shadow-lg z-10">
+      <div className="sticky bottom-0 left-0 right-0 py-2 px-3 border-t border-gray-200 bg-white shadow-lg" style={{ zIndex: 50 }}>
         <div className="mx-auto max-w-4xl">
           <div className="flex w-full items-end rounded-lg border border-gray-200 bg-white">
             <textarea

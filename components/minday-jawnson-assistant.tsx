@@ -285,7 +285,7 @@ export default function MindayJawnsonAssistant() {
       let chunkCount = 0;
       let unprocessedChunk = ''; // Store partial chunks between reads
       let incompleteMessageFlag = false; // Flag to track if we're likely seeing an incomplete message
-      
+
       // Process the stream
       while (true) {
         const { done, value } = await reader.read();
