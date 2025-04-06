@@ -61,6 +61,41 @@ interface AddDemoButtonProps {
   onDemoAdded?: () => void;
 }
 
+// Enhanced debug logging function
+function safeStringify(obj: any): string {
+  try {
+    if (obj === null) return 'null';
+    if (obj === undefined) return 'undefined';
+    if (typeof obj === 'function') return '[Function]';
+    if (typeof obj === 'object') {
+      // Try to safely extract error message and stack if it's an error
+      if (obj instanceof Error) {
+        return `Error: ${obj.message}\nStack: ${obj.stack}`;
+      }
+      
+      // Try normal JSON stringify
+      try {
+        return JSON.stringify(obj, null, 2);
+      } catch (e) {
+        // If circular reference or other JSON issues, try a more defensive approach
+        const seen = new WeakSet();
+        return JSON.stringify(obj, (key, value) => {
+          if (typeof value === 'object' && value !== null) {
+            if (seen.has(value)) {
+              return '[Circular]';
+            }
+            seen.add(value);
+          }
+          return value;
+        }, 2);
+      }
+    }
+    return String(obj);
+  } catch (e) {
+    return `[Failed to stringify: ${String(e)}]`;
+  }
+}
+
 export default function AddDemoButton({ onDemoAdded }: AddDemoButtonProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [passwordVerified, setPasswordVerified] = useState(false);
@@ -80,7 +115,20 @@ export default function AddDemoButton({ onDemoAdded }: AddDemoButtonProps) {
   const [contentFile, setContentFile] = useState<File | null>(null);
   const [iconFile, setIconFile] = useState<File | null>(null);
   const [previewIcon, setPreviewIcon] = useState<string>("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<string>("");
   const router = useRouter();
+  const timeoutId = useRef<number | null>(null);
+
+  // Enhanced logger for debugging
+  const logDebug = (message: string, data?: any) => {
+    const logMessage = data 
+      ? `${message}: ${safeStringify(data)}` 
+      : message;
+    
+    console.log(logMessage);
+    setDebugInfo(prev => `${prev}\n${logMessage}`.trim());
+  };
 
   const verifyPassword = () => {
     if (password === "pickles") {
@@ -117,71 +165,205 @@ export default function AddDemoButton({ onDemoAdded }: AddDemoButtonProps) {
     }
   };
 
+  // Simple function to convert text to base64
+  const textToBase64 = (text: string): string => {
+    try {
+      return btoa(unescape(encodeURIComponent(text)));
+    } catch (error) {
+      logDebug("Error converting text to base64", error);
+      return "";
+    }
+  };
+
+  // Simple function to read a file as base64 (just for icon)
+  const readFileAsBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      
+      reader.onload = () => {
+        try {
+          const result = reader.result as string;
+          // Extract base64 part if it's a data URL
+          const base64 = result.includes('base64,') 
+            ? result.split('base64,')[1] 
+            : result;
+          
+          resolve(base64);
+        } catch (error) {
+          reject(error);
+        }
+      };
+      
+      reader.onerror = () => reject(new Error(`Error reading file: ${file.name}`));
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     setError("");
+    setDebugInfo("Starting demo creation process...");
 
     try {
       // Validate form
       if (!demoTitle || !assistantTitle || !promptFile || !contentFile) {
-        setError("Please fill in all required fields");
+        const missingFields = [];
+        if (!demoTitle) missingFields.push('Demo Title');
+        if (!assistantTitle) missingFields.push('Assistant Title');
+        if (!promptFile) missingFields.push('Prompt File');
+        if (!contentFile) missingFields.push('Content File');
+        
+        const errorMsg = `Please fill in all required fields: ${missingFields.join(', ')}`;
+        logDebug(`Validation error: ${errorMsg}`);
+        setError(errorMsg);
+        setIsSubmitting(false);
+        return;
+      }
+      
+      // Validate file sizes
+      const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+      
+      if (iconFile && iconFile.size > MAX_FILE_SIZE) {
+        const errorMsg = `Icon file is too large (max 5MB): ${(iconFile.size / (1024 * 1024)).toFixed(2)}MB`;
+        logDebug(`File size error: ${errorMsg}`);
+        setError(errorMsg);
         setIsSubmitting(false);
         return;
       }
 
-      // Create form data
+      // Create FormData
+      logDebug("Creating FormData object...");
       const formData = new FormData();
+      
+      // Add basic form fields
       formData.append("password", password);
       formData.append("demoTitle", demoTitle);
       formData.append("assistantTitle", assistantTitle);
-      formData.append("assistantDescription", assistantDescription);
+      if (assistantDescription) {
+        formData.append("assistantDescription", assistantDescription);
+      }
+      
+      // Add files directly
+      logDebug(`Adding files to FormData - promptFile: ${promptFile?.name}, contentFile: ${contentFile?.name}`);
       formData.append("promptFile", promptFile);
       formData.append("contentFile", contentFile);
+      
+      // Add icon if provided
       if (iconFile) {
+        logDebug(`Adding icon file: ${iconFile.name}`);
         formData.append("iconFile", iconFile);
       }
-
-      // Send to API
-      const response = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || "Something went wrong");
+      
+      // Send as FormData
+      try {
+        logDebug("Starting fetch request to /api/upload with FormData...");
+        
+        const response = await fetch("/api/upload", {
+          method: "POST",
+          body: formData
+        });
+        
+        logDebug(`Response received with status: ${response.status} ${response.statusText}`);
+        
+        if (!response.ok) {
+          let errorMessage = `Server error: ${response.status} ${response.statusText}`;
+          
+          try {
+            const errorText = await response.text();
+            logDebug(`Error response body: ${errorText}`);
+            
+            try {
+              const errorJson = JSON.parse(errorText);
+              errorMessage = errorJson.error || errorJson.details || errorMessage;
+              logDebug("Parsed error JSON:", errorJson);
+            } catch (jsonParseError: any) {
+              logDebug("Failed to parse error response as JSON", jsonParseError);
+              // Use the raw text if JSON parsing fails
+              if (errorText && errorText.trim()) {
+                errorMessage = `Server error: ${errorText}`;
+              }
+            }
+          } catch (responseTextError: any) {
+            logDebug("Failed to read error response text", responseTextError);
+            // Keep the original error message if we can't read the response
+          }
+          
+          throw new Error(errorMessage);
+        }
+        
+        // Process successful response
+        logDebug("Successful response, parsing JSON...");
+        let result;
+        
+        try {
+          result = await response.json();
+          logDebug("Response JSON parsed successfully:", result);
+        } catch (jsonError: any) {
+          logDebug("Error parsing response JSON", jsonError);
+          throw new Error(`Failed to parse success response: ${jsonError.message || 'Unknown error'}`);
+        }
+        
+        // Success!
+        logDebug("Demo creation successful!", result);
+        setSuccess(true);
+        
+        // Capture the rename information if available
+        if (result.wasRenamed) {
+          setWasRenamed(true);
+          setCreatedDemoId(result.demoId);
+          setOriginalDemoId(result.originalId);
+          logDebug(`Demo was renamed: ${result.originalId} -> ${result.demoId}`);
+        }
+        
+        // Set success message
+        const successMsg = result.message || "Your demo has been created successfully!";
+        setSuccessMessage(successMsg);
+        logDebug(`Setting success message: ${successMsg}`);
+        
+        // Call the onDemoAdded callback if provided
+        if (onDemoAdded) {
+          logDebug("Calling onDemoAdded callback");
+          onDemoAdded();
+        }
+        
+        // Store the demo ID for navigation
+        const newDemoPath = `/demos/${result.demoId}`;
+        setCreatedDemoPath(newDemoPath);
+        logDebug(`Setting navigation path: ${newDemoPath}`);
+        
+        // Add a delay before redirecting to the new demo
+        logDebug(`Setting timeout for redirect (5000ms)`);
+        setTimeout(() => {
+          logDebug(`Redirecting to: ${newDemoPath}`);
+          router.push(newDemoPath);
+          router.refresh();
+        }, 5000);
+        
+        return result;
+      } catch (fetchError: any) {
+        logDebug("Fetch error details:", {
+          message: fetchError.message,
+          stack: fetchError.stack,
+          name: fetchError.name,
+          cause: fetchError.cause,
+          toString: fetchError.toString(),
+          constructor: fetchError.constructor?.name
+        });
+        throw fetchError;
       }
-
-      // Success!
-      setSuccess(true);
-      
-      // Capture the rename information if available
-      if (result.wasRenamed) {
-        setWasRenamed(true);
-        setCreatedDemoId(result.demoId);
-        setOriginalDemoId(result.originalId);
-      }
-      
-      // Set success message
-      setSuccessMessage(result.message || "Your demo has been created successfully!");
-      
-      // Call the onDemoAdded callback if provided
-      if (onDemoAdded) {
-        onDemoAdded();
-      }
-      
-      // Store the demo ID for navigation
-      const newDemoPath = `/demos/${result.demoId}`;
-      setCreatedDemoPath(newDemoPath);
-      
-      // Add a delay before redirecting to the new demo
-      setTimeout(() => {
-        router.push(newDemoPath);
-        router.refresh();
-      }, 5000); // Increased to 5 seconds to give more time for the page to load
     } catch (err: any) {
+      const errorDetails = {
+        message: err.message,
+        stack: err.stack,
+        name: err.name,
+        cause: err.cause,
+        toString: err.toString(),
+        constructor: err.constructor?.name
+      };
+      
+      logDebug("Demo creation error details:", errorDetails);
+      console.error("Demo creation error details:", errorDetails);
       setError(err.message || "Failed to create demo");
     } finally {
       setIsSubmitting(false);
@@ -512,7 +694,7 @@ export default function AddDemoButton({ onDemoAdded }: AddDemoButtonProps) {
                               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
-                            Creating...
+                            Processing...
                           </>
                         ) : (
                           "Create Demo"

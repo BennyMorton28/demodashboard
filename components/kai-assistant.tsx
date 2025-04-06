@@ -187,6 +187,60 @@ export default function KaiAssistant() {
     }
   };
 
+  // Add a helper function to manually attempt to fix malformed JSON
+  const attemptJSONFix = (jsonStr: string): any => {
+    try {
+      // Try direct parsing first
+      return JSON.parse(jsonStr);
+    } catch (error) {
+      console.log("Manual JSON fixing attempt");
+      
+      // Common JSON errors we can try to fix
+      let fixedJson = jsonStr;
+      
+      // 1. Try to fix unclosed quotes
+      const unbalancedQuotes = (jsonStr.match(/"/g) || []).length % 2 !== 0;
+      if (unbalancedQuotes) {
+        fixedJson = fixedJson + '"';
+      }
+      
+      // 2. Try to fix unclosed brackets/braces
+      const openBraces = (jsonStr.match(/{/g) || []).length;
+      const closeBraces = (jsonStr.match(/}/g) || []).length;
+      if (openBraces > closeBraces) {
+        fixedJson = fixedJson + '}'.repeat(openBraces - closeBraces);
+      }
+      
+      // 3. Try to fix missing commas
+      fixedJson = fixedJson.replace(/"\s*{/g, '",{');
+      fixedJson = fixedJson.replace(/}\s*"/g, '},"');
+      
+      try {
+        return JSON.parse(fixedJson);
+      } catch (fixError) {
+        // If we still can't parse, try a more brute force approach - extract known fields
+        // Use regex to extract data we care about
+        const extractJson: any = {};
+        
+        const eventMatch = jsonStr.match(/"event"\s*:\s*"([^"]*)"/);
+        if (eventMatch && eventMatch[1]) {
+          extractJson.event = eventMatch[1];
+        }
+        
+        const deltaMatch = jsonStr.match(/"delta"\s*:\s*"([^"]*)"/);
+        if (deltaMatch && deltaMatch[1]) {
+          extractJson.data = { delta: deltaMatch[1] };
+        }
+        
+        if (Object.keys(extractJson).length > 0) {
+          return extractJson;
+        }
+        
+        throw new Error("Failed to manually fix JSON");
+      }
+    }
+  };
+
   const handleSendMessage = async (message: string, apiEndpoint = '/api/kai-chat') => {
     if (!message.trim()) return;
     
@@ -318,15 +372,37 @@ export default function KaiAssistant() {
                 parsedData = JSON.parse(cleanEventData);
               } catch (standardJsonError) {
                 // If standard parsing fails, try using partial-json which is more tolerant
-                console.log("Standard JSON parsing failed, trying partial-json");
-                setDebugInfo(prev => prev + '\nTrying partial-json parser');
+                console.log("Standard JSON parsing failed, trying alternative methods");
+                setDebugInfo(prev => prev + '\nTrying alternative JSON parsing');
                 
-                // Use partial-json to parse incomplete or malformed JSON
-                parsedData = PartialJSON.parse(cleanEventData);
-                
-                // Log recovery success
-                console.log("Recovered using partial-json parser");
-                setDebugInfo(prev => prev + '\nRecovered using partial JSON parser');
+                try {
+                  // Try to use PartialJSON if available
+                  if (typeof PartialJSON !== 'undefined' && PartialJSON.parse) {
+                    parsedData = PartialJSON.parse(cleanEventData);
+                    console.log("Recovered using partial-json parser");
+                  } else {
+                    // If PartialJSON isn't available, try our manual fixer
+                    parsedData = attemptJSONFix(cleanEventData);
+                    console.log("Recovered using manual JSON fix");
+                  }
+                } catch (partialJsonError) {
+                  // Last resort, try to extract text with regex directly
+                  console.log("All JSON parsing methods failed, falling back to regex extraction");
+                  
+                  const deltaMatch = cleanEventData.match(/"delta"\s*:\s*"([^"]*)"/);
+                  if (deltaMatch && deltaMatch[1]) {
+                    // Create a minimal structure matching what we expect
+                    parsedData = {
+                      event: "response.output_text.delta",
+                      data: {
+                        delta: deltaMatch[1]
+                      }
+                    };
+                    console.log("Created synthetic delta data from regex");
+                  } else {
+                    throw new Error("Could not extract delta content");
+                  }
+                }
               }
               
               // Log the event type if we successfully parsed it

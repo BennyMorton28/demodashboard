@@ -4,14 +4,73 @@ import path from 'path';
 import { existsSync } from 'fs';
 import fs from 'fs';
 
+// Enhanced logging helper
+function logDebug(message: string, data?: any): void {
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] ${message}`);
+  
+  if (data) {
+    try {
+      // Try to stringify the data if it's an object
+      if (typeof data === 'object') {
+        // Special handling for errors
+        if (data instanceof Error) {
+          console.log(`[${timestamp}] Error details:`, {
+            message: data.message,
+            stack: data.stack,
+            name: data.name
+          });
+        } else {
+          console.log(`[${timestamp}] Data:`, JSON.stringify(data, null, 2));
+        }
+      } else {
+        console.log(`[${timestamp}] Data:`, data);
+      }
+    } catch (err) {
+      console.log(`[${timestamp}] Failed to stringify data:`, String(err));
+      console.log(`[${timestamp}] Original data:`, data);
+    }
+  }
+}
+
 // More robust directory creation function with validation
 async function createDirectorySafely(dirPath: string): Promise<boolean> {
   try {
-    console.log(`Attempting to create directory: ${dirPath}`);
+    logDebug(`Attempting to create directory: ${dirPath}`);
     
     // First check if it already exists
     if (existsSync(dirPath)) {
-      console.log(`Directory already exists: ${dirPath}`);
+      logDebug(`Directory already exists: ${dirPath}`);
+      
+      // Additional diagnostics - check if it's readable and writable
+      try {
+        const stats = fs.statSync(dirPath);
+        logDebug(`Directory stats:`, {
+          isDirectory: stats.isDirectory(),
+          mode: stats.mode.toString(8),
+          uid: stats.uid,
+          gid: stats.gid,
+          size: stats.size,
+          atime: stats.atime,
+          mtime: stats.mtime,
+          ctime: stats.ctime
+        });
+        
+        // Test write access by trying to create a temporary file
+        const testFilePath = path.join(dirPath, `.test-${Date.now()}.tmp`);
+        try {
+          fs.writeFileSync(testFilePath, 'test');
+          fs.unlinkSync(testFilePath); // Clean up
+          logDebug(`Directory is writable: ${dirPath}`);
+        } catch (writeError) {
+          logDebug(`Directory exists but is not writable: ${dirPath}`, writeError);
+          // We'll continue since the directory exists, but log the warning
+        }
+      } catch (statError) {
+        logDebug(`Directory exists but cannot read stats: ${dirPath}`, statError);
+        // Continue anyway since the directory exists
+      }
+      
       return true;
     }
     
@@ -20,14 +79,14 @@ async function createDirectorySafely(dirPath: string): Promise<boolean> {
     
     // Verify it was created
     if (existsSync(dirPath)) {
-      console.log(`Successfully created directory: ${dirPath}`);
+      logDebug(`Successfully created directory: ${dirPath}`);
       return true;
     } else {
-      console.error(`Failed to create directory: ${dirPath}`);
+      logDebug(`Failed to create directory: ${dirPath} (exists check failed after creation)`);
       return false;
     }
   } catch (error) {
-    console.error(`Error creating directory ${dirPath}:`, error);
+    logDebug(`Error creating directory ${dirPath}:`, error);
     return false;
   }
 }
@@ -40,22 +99,54 @@ async function writeFileSafely(filePath: string, content: string | Buffer): Prom
     const dirCreated = await createDirectorySafely(dirPath);
     
     if (!dirCreated) {
+      logDebug(`Failed to create directory for file: ${filePath}`);
       throw new Error(`Failed to create directory for file: ${filePath}`);
     }
     
-    console.log(`Writing file to: ${filePath}`);
-    await writeFile(filePath, content);
+    logDebug(`Writing file to: ${filePath} (${typeof content === 'string' ? content.length : content.byteLength} bytes)`);
+    
+    try {
+      await writeFile(filePath, content);
+    } catch (writeError) {
+      logDebug(`Error during writeFile operation:`, writeError);
+      
+      // Try a fallback approach with fs.writeFileSync
+      logDebug(`Attempting fallback with fs.writeFileSync`);
+      fs.writeFileSync(filePath, content);
+      logDebug(`Fallback write succeeded`);
+    }
     
     // Verify the file was written
     if (existsSync(filePath)) {
-      console.log(`Successfully wrote file: ${filePath}`);
-      return true;
+      try {
+        const stats = fs.statSync(filePath);
+        const expectedSize = typeof content === 'string' ? Buffer.byteLength(content) : content.byteLength;
+        if (stats.size === 0 && expectedSize > 0) {
+          logDebug(`Warning: File was created but has zero size: ${filePath}`);
+          // Try writing again with sync method
+          fs.writeFileSync(filePath, content);
+          
+          const statsAfterRetry = fs.statSync(filePath);
+          if (statsAfterRetry.size === 0) {
+            logDebug(`File still has zero size after retry: ${filePath}`);
+            return false;
+          } else {
+            logDebug(`Retry succeeded, file size now: ${statsAfterRetry.size} bytes`);
+          }
+        }
+        
+        logDebug(`Successfully wrote file: ${filePath} (${stats.size} bytes)`);
+        return true;
+      } catch (statError) {
+        logDebug(`Error checking written file stats: ${filePath}`, statError);
+        return existsSync(filePath); // Return true if file exists, even if we can't get stats
+      }
     } else {
-      console.error(`Failed to write file: ${filePath}`);
+      logDebug(`Failed to write file: ${filePath} (file does not exist after write)`);
       return false;
     }
   } catch (error) {
-    console.error(`Error writing file ${filePath}:`, error);
+    logDebug(`Error writing file ${filePath}:`, error);
     return false;
   }
 }
@@ -175,177 +266,187 @@ async function generateUniqueDemoId(baseId: string): Promise<string> {
   return newId;
 }
 
+export const config = {
+  api: {
+    // Use default JSON body parser
+    bodyParser: {
+      sizeLimit: '50mb', // Allow up to 50MB for the total payload
+    },
+    responseLimit: '50mb',
+  },
+};
+
+// Interface for file data in the request
+interface FileData {
+  name: string;
+  type: string;
+  size: number;
+  content: string; // Base64 encoded content
+}
+
+// Interface for the full request payload
+interface UploadPayload {
+  password: string;
+  demoTitle: string;
+  assistantTitle: string;
+  assistantDescription: string;
+  promptFile: FileData | null;
+  contentFile: FileData | null;
+  iconFile: FileData | null;
+}
+
 export async function POST(req: NextRequest) {
   try {
+    console.log("Upload route hit");
     const formData = await req.formData();
-    const password = formData.get('password');
     
-    // Verify password
-    if (password !== 'pickles') {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    // Get form data
-    const demoTitle = formData.get('demoTitle') as string;
-    const assistantTitle = formData.get('assistantTitle') as string;
-    const assistantDescription = formData.get('assistantDescription') as string;
-    const promptFile = formData.get('promptFile') as File;
-    const contentFile = formData.get('contentFile') as File;
-    const iconFile = formData.get('iconFile') as File | null;
-
+    console.log("Form data received, keys:", Array.from(formData.keys()));
+    
     // Validate required fields
-    if (!demoTitle || !assistantTitle || !promptFile || !contentFile) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      );
+    const demoTitle = formData.get("demoTitle") as string;
+    const assistantTitle = formData.get("assistantTitle") as string;
+    const promptFile = formData.get("promptFile");
+    const contentFile = formData.get("contentFile");
+    
+    if (!demoTitle) {
+      return NextResponse.json({ error: "Demo title is required" }, { status: 400 });
+    }
+    
+    if (!assistantTitle) {
+      return NextResponse.json({ error: "Assistant title is required" }, { status: 400 });
+    }
+    
+    // Check if the files exist and are not string (they should be Blob/File objects)
+    if (!promptFile || typeof promptFile === 'string') {
+      return NextResponse.json({ error: "Prompt file is required" }, { status: 400 });
+    }
+    
+    if (!contentFile || typeof contentFile === 'string') {
+      return NextResponse.json({ error: "Content file is required" }, { status: 400 });
+    }
+    
+    // Now we know these are Blob objects with text method and name property
+    const promptFileObj = promptFile as unknown as { name: string, text: () => Promise<string> };
+    const contentFileObj = contentFile as unknown as { name: string, text: () => Promise<string> };
+    
+    console.log("Files received:", { 
+      promptFile: promptFileObj.name,
+      contentFile: contentFileObj.name
+    });
+
+    // Generate demo ID and folder structures
+    const demoId = await generateUniqueDemoId(demoTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-'));
+    const demoPath = `/demos/${demoId}`;
+    
+    // Create necessary directories
+    const markdownDir = path.join(process.cwd(), "public/markdown", demoId);
+    await createDirectorySafely(markdownDir);
+    
+    // Save the prompt file
+    try {
+      const promptContent = await promptFileObj.text();
+      const promptPath = path.join(process.cwd(), "lib/prompts", `${demoId}-prompt.md`);
+      await writeFileSafely(promptPath, promptContent);
+      console.log("Prompt file saved to", promptPath);
+    } catch (err) {
+      console.error("Error saving prompt file:", err);
+      return NextResponse.json({ error: "Failed to save prompt file" }, { status: 500 });
+    }
+    
+    // Save the content file
+    let contentContent = "";
+    try {
+      contentContent = await contentFileObj.text();
+      const contentPath = path.join(markdownDir, "content.md");
+      await writeFileSafely(contentPath, contentContent);
+      console.log("Content file saved to", contentPath);
+    } catch (err) {
+      console.error("Error saving content file:", err);
+      return NextResponse.json({ error: "Failed to save content file" }, { status: 500 });
     }
 
-    // Generate a base demo ID (lowercase, hyphenated version of the title)
-    const baseId = demoTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    // Process icon (optional)
+    const iconFile = formData.get("iconFile");
+    let iconPath = "";
     
-    // Generate a unique demo ID to avoid conflicts
-    const demoId = await generateUniqueDemoId(baseId);
-    console.log(`Generated demo ID: ${demoId}`);
-    
-    // Flag to indicate if the ID was modified
-    const wasRenamed = baseId !== demoId;
-
-    // Create all necessary parent directories first
-    console.log("Creating base directories...");
-    
-    // 1. Create public/markdown directory structure
-    const contentFolderPath = path.join(process.cwd(), 'public', 'markdown', demoId);
-    const contentDirCreated = await createDirectorySafely(contentFolderPath);
-    if (!contentDirCreated) {
-      throw new Error(`Failed to create content directory: ${contentFolderPath}`);
-    }
-    
-    // 2. Create lib/prompts directory structure
-    const promptsDir = path.join(process.cwd(), 'lib', 'prompts');
-    const promptsDirCreated = await createDirectorySafely(promptsDir);
-    if (!promptsDirCreated) {
-      throw new Error(`Failed to create prompts directory: ${promptsDir}`);
-    }
-    
-    // 3. Create app/demos directory structure
-    const demosDir = path.join(process.cwd(), 'app', 'demos', demoId);
-    const demosDirCreated = await createDirectorySafely(demosDir);
-    if (!demosDirCreated) {
-      throw new Error(`Failed to create demos directory: ${demosDir}`);
-    }
-    
-    // 4. Create components directory
-    const componentsDir = path.join(process.cwd(), 'components');
-    const componentsDirCreated = await createDirectorySafely(componentsDir);
-    if (!componentsDirCreated) {
-      throw new Error(`Failed to create components directory: ${componentsDir}`);
-    }
-    
-    // 5. Create public/icons directory
-    const iconsDir = path.join(process.cwd(), 'public', 'icons');
-    const iconsDirCreated = await createDirectorySafely(iconsDir);
-    if (!iconsDirCreated) {
-      throw new Error(`Failed to create icons directory: ${iconsDir}`);
-    }
-
-    // Save prompt file
-    const promptContent = await promptFile.text();
-    const promptFilePath = path.join(process.cwd(), 'lib', 'prompts', `${demoId}-prompt.md`);
-    const promptSaved = await writeFileSafely(promptFilePath, promptContent);
-    if (!promptSaved) {
-      throw new Error(`Failed to save prompt file: ${promptFilePath}`);
-    }
-
-    // Save icon if provided
-    let iconPath = '';
-    if (iconFile) {
-      const iconBuffer = Buffer.from(await iconFile.arrayBuffer());
-      const fileExt = path.extname(iconFile.name).toLowerCase() || '.png';
-      iconPath = `/icons/${demoId}${fileExt}`;
-      const iconFilePath = path.join(process.cwd(), 'public', 'icons', `${demoId}${fileExt}`);
-      const iconSaved = await writeFileSafely(iconFilePath, iconBuffer);
-      if (!iconSaved) {
-        throw new Error(`Failed to save icon file: ${iconFilePath}`);
+    if (iconFile && typeof iconFile !== 'string') {
+      try {
+        const iconFileObj = iconFile as unknown as { 
+          name: string, 
+          arrayBuffer: () => Promise<ArrayBuffer> 
+        };
+        
+        const buffer = Buffer.from(await iconFileObj.arrayBuffer());
+        const fileExt = path.extname(iconFileObj.name) || ".png";
+        iconPath = `/icons/${demoId}${fileExt}`;
+        
+        const fullIconPath = path.join(process.cwd(), "public", iconPath);
+        await writeFileSafely(fullIconPath, buffer);
+        console.log("Icon saved to", fullIconPath);
+      } catch (err) {
+        console.error("Error processing icon:", err);
+        // Continue without icon
+        iconPath = "";
       }
     } else {
-      // Generate a default icon with initials if no icon was uploaded
+      // Generate default icon with initials
       try {
-        console.log("No icon uploaded, creating default icon with initials");
-        
-        // Get the first two letters of the demo title
         const initials = demoTitle
-          .split(' ')
-          .map(part => part.charAt(0))
-          .join('')
-          .toUpperCase()
-          .substring(0, 2);
+          .split(" ")
+          .slice(0, 2)
+          .map(word => word[0])
+          .join("")
+          .toUpperCase();
         
-        // Create a canvas to generate a simple PNG
-        const { createCanvas } = require('canvas');
-        const canvas = createCanvas(100, 100);
-        const ctx = canvas.getContext('2d');
+        const { createCanvas } = require("canvas");
+        const canvas = createCanvas(200, 200);
+        const ctx = canvas.getContext("2d");
         
-        // Draw a colored background
-        ctx.fillStyle = '#f3f4f6'; // Light gray background
-        ctx.fillRect(0, 0, 100, 100);
+        ctx.fillStyle = "#f3f4f6";
+        ctx.fillRect(0, 0, 200, 200);
         
-        // Draw the text
-        ctx.font = 'bold 56px Arial';
-        ctx.fillStyle = '#374151'; // Dark gray text
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(initials, 50, 50);
+        ctx.fillStyle = "#4b5563";
+        ctx.font = "bold 80px Arial";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(initials, 100, 100);
         
-        // Save the canvas as PNG
-        const buffer = canvas.toBuffer('image/png');
-        const iconFilePath = path.join(process.cwd(), 'public', 'icons', `${demoId}.png`);
-        const iconSaved = await writeFileSafely(iconFilePath, buffer);
-        
-        if (!iconSaved) {
-          throw new Error(`Failed to save default icon file: ${iconFilePath}`);
-        }
-        
+        const buffer = canvas.toBuffer("image/png");
         iconPath = `/icons/${demoId}.png`;
-        console.log(`Created default icon for ${demoId} with initials: ${initials}`);
-      } catch (error) {
-        console.error("Error creating default icon:", error);
-        // Don't throw here - not having an icon is not a critical error
-        // The UI will fall back to showing initials directly
+        
+        const fullIconPath = path.join(process.cwd(), "public", iconPath);
+        await writeFileSafely(fullIconPath, buffer);
+        console.log("Default icon generated and saved to", fullIconPath);
+      } catch (err) {
+        console.error("Error generating default icon:", err);
       }
     }
 
-    // Save demo content for the right side of the screen
-    const contentContent = await contentFile.text();
-    
-    // Save content markdown to a dedicated file
-    const contentFilePath = path.join(contentFolderPath, 'content.md');
-    const contentSaved = await writeFileSafely(contentFilePath, contentContent);
-    if (!contentSaved) {
-      throw new Error(`Failed to save content file: ${contentFilePath}`);
-    }
-    
     // Create demo page file
-    const demoPagePath = path.join(demosDir, 'page.tsx');
+    const demoDirPath = path.join(process.cwd(), 'app/demos', demoId);
+    await createDirectorySafely(demoDirPath);
+    
+    const demoPagePath = path.join(demoDirPath, 'page.tsx');
     const demoPageContent = generateDemoPage(demoId, demoTitle, assistantTitle);
-    const demoPageSaved = await writeFileSafely(demoPagePath, demoPageContent);
-    if (!demoPageSaved) {
-      throw new Error(`Failed to save demo page file: ${demoPagePath}`);
-    }
+    await writeFileSafely(demoPagePath, demoPageContent);
+    console.log("Demo page created at", demoPagePath);
 
     // Create assistant component
     const assistantComponentPath = path.join(process.cwd(), 'components', `${demoId}-assistant.tsx`);
-    const assistantComponentContent = generateAssistantComponent(demoId, assistantTitle, assistantDescription);
-    const assistantSaved = await writeFileSafely(assistantComponentPath, assistantComponentContent);
-    if (!assistantSaved) {
-      throw new Error(`Failed to save assistant component file: ${assistantComponentPath}`);
-    }
-
-    // Add to demo info samples
-    await updateDemoInfoSamples(demoId, demoTitle, contentContent);
+    const assistantComponentContent = generateAssistantComponent(demoId, assistantTitle);
+    await writeFileSafely(assistantComponentPath, assistantComponentContent);
+    console.log("Assistant component created at", assistantComponentPath);
+    
+    // Create markdown documentation files
+    const promptInfoPath = path.join(markdownDir, 'prompt-info.md');
+    const promptInfoContent = `# ${demoTitle} Prompt\n\nThis demo uses a custom prompt to guide its responses.`;
+    await writeFileSafely(promptInfoPath, promptInfoContent);
+    console.log("Prompt info created at", promptInfoPath);
+    
+    const implementationPath = path.join(markdownDir, 'implementation.md');
+    const implementationContent = `# Implementation Details\n\nThis is a customizable demo created with the demo builder.`;
+    await writeFileSafely(implementationPath, implementationContent);
+    console.log("Implementation doc created at", implementationPath);
 
     console.log(`Demo creation completed successfully for: ${demoId}`);
     
@@ -353,12 +454,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       demoId: demoId,
-      demoPath: `/demos/${demoId}`,
-      wasRenamed: wasRenamed,
-      originalId: baseId,
-      message: wasRenamed 
-        ? `Demo created successfully with ID "${demoId}" (original ID "${baseId}" was already in use)`
-        : `Demo created successfully with ID "${demoId}"`
+      demoPath: demoPath,
+      message: `Demo created successfully with ID "${demoId}"`
     });
   } catch (error: any) {
     console.error('Error creating demo:', error);
@@ -416,7 +513,7 @@ export default function ${componentName}Demo() {
 }
 
 // Helper to generate an assistant component
-function generateAssistantComponent(demoId: string, assistantTitle: string, assistantDescription: string): string {
+function generateAssistantComponent(demoId: string, assistantTitle: string): string {
   const welcomeMessage = `Hello! I'm ${assistantTitle}. How can I help you today?`;
   const componentName = demoId.split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('');
   
@@ -424,6 +521,7 @@ function generateAssistantComponent(demoId: string, assistantTitle: string, assi
 import React, { useState, useRef, useEffect } from "react";
 import Chat from "./chat";
 import { Item } from "@/lib/assistant";
+import PartialJSON from 'partial-json';
 
 export default function ${componentName}Assistant() {
   const [messages, setMessages] = useState<Item[]>([
@@ -440,13 +538,17 @@ export default function ${componentName}Assistant() {
   const [isLoading, setIsLoading] = useState(false);
   const responseTextRef = useRef('');
   const responseIdRef = useRef(\`msg_\${Date.now()}\`);
-  const [showDebug, setShowDebug] = useState(false);
-  const [debugInfo, setDebugInfo] = useState('');
   
   // Add a buffer and timer for smoothing out state updates
   const bufferTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastUpdateTimeRef = useRef<number>(0);
   const UPDATE_INTERVAL_MS = 50; // Update UI at most every 50ms
+  
+  // Track pending update to avoid excessive state updates
+  const pendingUpdateRef = useRef<string>('');
+  const isUpdatingRef = useRef<boolean>(false);
+
+  // Add a buffer size threshold before showing any text
   const INITIAL_BUFFER_SIZE = 20; // Only start showing text once we have at least 20 chars
   const hasStartedStreamingRef = useRef(false);
 
@@ -464,63 +566,71 @@ export default function ${componentName}Assistant() {
       hasStartedStreamingRef.current = true;
     }
     
+    // Store the latest text in our pending ref
+    pendingUpdateRef.current = text;
+    
+    // If an update is already scheduled or in progress, don't schedule another one
+    if (bufferTimeoutRef.current || isUpdatingRef.current) {
+      return;
+    }
+    
     // If we recently updated, schedule an update for later
     if (now - lastUpdateTimeRef.current < UPDATE_INTERVAL_MS) {
-      // Clear existing timeout if there is one
-      if (bufferTimeoutRef.current) {
-        clearTimeout(bufferTimeoutRef.current);
-      }
-      
       // Schedule a new update
       bufferTimeoutRef.current = setTimeout(() => {
-        lastUpdateTimeRef.current = Date.now();
-        bufferTimeoutRef.current = null;
-        
-        // Do the actual update
-        setMessages(prev => {
-          // Create a deep copy to avoid mutation
-          const newMessages = JSON.parse(JSON.stringify(prev));
-          const index = newMessages.findIndex(
-            (m: any) => m.type === 'message' && m.role === 'assistant' && m.id === messageId
-          );
-          
-          if (index !== -1) {
-            const assistantMessage = newMessages[index];
-            if (assistantMessage.type === 'message') {
-              assistantMessage.content = [{
-                type: 'output_text',
-                text: text
-              }];
-            }
-          }
-          
-          return newMessages;
-        });
+        performUpdate(messageId);
       }, UPDATE_INTERVAL_MS);
     } else {
       // It's been long enough since our last update, do it immediately
-      lastUpdateTimeRef.current = now;
-      
-      setMessages(prev => {
-        // Create a deep copy to avoid mutation
-        const newMessages = JSON.parse(JSON.stringify(prev));
-        const index = newMessages.findIndex(
-          (m: any) => m.type === 'message' && m.role === 'assistant' && m.id === messageId
-        );
-        
-        if (index !== -1) {
-          const assistantMessage = newMessages[index];
-          if (assistantMessage.type === 'message') {
-            assistantMessage.content = [{
-              type: 'output_text',
-              text: text
-            }];
-          }
-        }
-        
-        return newMessages;
-      });
+      performUpdate(messageId);
     }
+  };
+  
+  // Separate function to perform the actual update to avoid nesting setMessages calls
+  const performUpdate = (messageId: string) => {
+    // Clear any existing timeout
+    if (bufferTimeoutRef.current) {
+      clearTimeout(bufferTimeoutRef.current);
+      bufferTimeoutRef.current = null;
+    }
+    
+    // Mark that we're updating
+    isUpdatingRef.current = true;
+    lastUpdateTimeRef.current = Date.now();
+    
+    // Get the latest text from our ref
+    const textToUpdate = pendingUpdateRef.current;
+    
+    // Perform the actual update
+    setMessages(prev => {
+      // Create a deep copy to avoid mutation
+      const newMessages = JSON.parse(JSON.stringify(prev));
+      const index = newMessages.findIndex(
+        (m: any) => m.type === 'message' && m.role === 'assistant' && m.id === messageId
+      );
+      
+      if (index !== -1) {
+        const assistantMessage = newMessages[index];
+        if (assistantMessage.type === 'message') {
+          assistantMessage.content = [{
+            type: 'output_text',
+            text: textToUpdate
+          }];
+        }
+      }
+      
+      return newMessages;
+    });
+    
+    // After a small delay, mark update as complete
+    setTimeout(() => {
+      isUpdatingRef.current = false;
+      
+      // If content has changed during the update, schedule another update
+      if (pendingUpdateRef.current !== textToUpdate) {
+        updateMessageContent(pendingUpdateRef.current, messageId);
+      }
+    }, 10);
   };
 
   // Clean up any pending timeouts when component unmounts
@@ -532,17 +642,18 @@ export default function ${componentName}Assistant() {
     };
   }, []);
 
+  // Helper function to extract delta text from different possible structures
   const extractDeltaText = (parsedData: any): string => {
     let deltaText = '';
     
     try {
-      // Direct delta access
+      // Based on observed logs, the delta text is directly in data.delta for delta events
       if (parsedData.data?.delta) {
         deltaText = parsedData.data.delta;
         return deltaText;
       }
       
-      // OpenAI event structure
+      // If we have the OpenAI event structure from the logs
       if (
         parsedData.event === 'response.output_text.delta' && 
         typeof parsedData.data === 'object'
@@ -553,13 +664,27 @@ export default function ${componentName}Assistant() {
         }
       }
       
-      // Deep search for complex structures
+      // Standard chatGPT delta format
+      if (parsedData.choices && Array.isArray(parsedData.choices) && parsedData.choices.length > 0) {
+        const choice = parsedData.choices[0];
+        if (choice.delta && choice.delta.content) {
+          deltaText = choice.delta.content;
+          return deltaText;
+        }
+      }
+      
+      // Fallback to deep search for complex structures
       const findDelta = (obj: any): string | null => {
         if (!obj || typeof obj !== 'object') return null;
         
         if (obj.delta) {
           return typeof obj.delta === 'string' ? obj.delta : 
-                 obj.delta.value ? obj.delta.value : null;
+                 obj.delta.value ? obj.delta.value : 
+                 obj.delta.content ? obj.delta.content : null;
+        }
+        
+        if (obj.content && typeof obj.content === 'string') {
+          return obj.content;
         }
         
         for (const key in obj) {
@@ -580,7 +705,7 @@ export default function ${componentName}Assistant() {
         }
       }
       
-      // Error format
+      // Final check for simplified event format from error recovery
       if (parsedData.event === 'error' && parsedData.data?.message) {
         deltaText = \`[Error: \${parsedData.data.message}]\`;
         return deltaText;
@@ -588,15 +713,64 @@ export default function ${componentName}Assistant() {
       
       return '';
     } catch (error) {
-      console.error("Error extracting delta text:", error);
       return '';
+    }
+  };
+
+  // Add a helper function to manually attempt to fix malformed JSON
+  const attemptJSONFix = (jsonStr: string): any => {
+    try {
+      // Try direct parsing first
+      return JSON.parse(jsonStr);
+    } catch (error) {
+      // Common JSON errors we can try to fix
+      let fixedJson = jsonStr;
+      
+      // 1. Try to fix unclosed quotes
+      const unbalancedQuotes = (jsonStr.match(/"/g) || []).length % 2 !== 0;
+      if (unbalancedQuotes) {
+        fixedJson = fixedJson + '"';
+      }
+      
+      // 2. Try to fix unclosed brackets/braces
+      const openBraces = (jsonStr.match(/{/g) || []).length;
+      const closeBraces = (jsonStr.match(/}/g) || []).length;
+      if (openBraces > closeBraces) {
+        fixedJson = fixedJson + '}'.repeat(openBraces - closeBraces);
+      }
+      
+      // 3. Try to fix missing commas
+      fixedJson = fixedJson.replace(/"\s*{/g, '",{');
+      fixedJson = fixedJson.replace(/}\s*"/g, '},"');
+      
+      try {
+        return JSON.parse(fixedJson);
+      } catch (fixError) {
+        // If we still can't parse, try a more brute force approach - extract known fields
+        // Use regex to extract data we care about
+        const extractJson: any = {};
+        
+        const eventMatch = jsonStr.match(/"event"\s*:\s*"([^"]*)"/);
+        if (eventMatch && eventMatch[1]) {
+          extractJson.event = eventMatch[1];
+        }
+        
+        const deltaMatch = jsonStr.match(/"delta"\s*:\\s*"([^"]*)"/);
+        if (deltaMatch && deltaMatch[1]) {
+          extractJson.data = { delta: deltaMatch[1] };
+        }
+        
+        if (Object.keys(extractJson).length > 0) {
+          return extractJson;
+        }
+        
+        throw new Error("Failed to manually fix JSON");
+      }
     }
   };
 
   const handleSendMessage = async (message: string) => {
     if (!message.trim()) return;
-    
-    setDebugInfo('Sending message...');
 
     // Create a unique ID for this message
     const messageId = \`msg_\${Date.now()}\`;
@@ -607,32 +781,33 @@ export default function ${componentName}Assistant() {
       content: [{ type: "input_text", text: message.trim() }],
     };
 
-    // Add user message to the chat
-    setMessages(prev => [...prev, userItem]);
-
-    // Create a placeholder for the assistant's response
-    const assistantPlaceholder: Item = {
-      id: messageId,
-      type: "message",
-      role: "assistant",
-      content: [{ type: "output_text", text: "..." }],
-    };
-
-    // Add the placeholder
-    setMessages(prev => [...prev, assistantPlaceholder]);
-
-    // Start loading state
-    setIsLoading(true);
-    
-    // Reset streaming state
-    hasStartedStreamingRef.current = false;
-    
-    // Reset the accumulated response text for the new message
-    responseTextRef.current = '';
-    responseIdRef.current = messageId;
-
     try {
-      // Fetch API
+      setIsLoading(true);
+      // Reset streaming flag for new message
+      hasStartedStreamingRef.current = false;
+      
+      // Add user message to the list
+      setMessages(prev => [...prev, userItem]);
+      
+      // Create empty assistant message to start with
+      const assistantItem: Item = {
+        type: "message",
+        role: "assistant",
+        id: messageId,
+        content: [{ 
+          type: "output_text", 
+          text: "" 
+        }],
+      };
+
+      // Add the empty assistant message
+      setMessages(prev => [...prev, assistantItem]);
+      
+      // Reset the response text for this new conversation turn
+      responseTextRef.current = '';
+      responseIdRef.current = messageId;
+      
+      // Call our API endpoint with streaming
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
@@ -643,64 +818,97 @@ export default function ${componentName}Assistant() {
           demoId: "${demoId}"
         }),
       });
-
-      if (!response.ok || !response.body) {
-        throw new Error(\`HTTP error! status: \${response.status}\`);
+      
+      if (!response.ok) {
+        throw new Error(\`Failed to get response from assistant: \${response.status} \${response.statusText}\`);
       }
-
-      // Get a reader to read the stream
-      const reader = response.body.getReader();
-      let receivedLength = 0;
-      const decoder = new TextDecoder();
-
+      
       // Read the stream
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('Failed to get stream reader');
+      
+      const decoder = new TextDecoder();
+      let unprocessedChunk = ''; // Store partial chunks between reads
+      
+      // Process the stream
       while (true) {
         const { done, value } = await reader.read();
-        
         if (done) {
-          console.log('Stream complete');
           break;
         }
         
-        // Process the chunk of data
+        // Decode the chunk
         const chunk = decoder.decode(value, { stream: true });
-        receivedLength += chunk.length;
         
-        try {
-          // Sometimes we get multiple JSON objects in one chunk, split by newlines
-          const jsonChunks = chunk.split('\\n').filter(Boolean);
+        // Add this chunk to any unprocessed data from previous reads
+        const fullChunk = unprocessedChunk + chunk;
+        unprocessedChunk = '';
+        
+        // Split the chunk by data: but keep track of partial chunks
+        const dataEvents = fullChunk.split('data: ');
+        // Filter out empty strings (from the split)
+        const validEvents = dataEvents.filter(event => event.trim().length > 0);
+        
+        for (let i = 0; i < validEvents.length; i++) {
+          const eventData = validEvents[i];
+          // Check if this is the last event and doesn't end with a newline - it might be incomplete
+          if (i === validEvents.length - 1 && !eventData.endsWith('\\n\\n')) {
+            unprocessedChunk = 'data: ' + eventData;
+            continue;
+          }
           
-          for (const jsonChunk of jsonChunks) {
+          // Clean up the event data by removing any trailing newlines
+          const cleanEventData = eventData.replace(/\\n\\n$/, '');
+          
+          // Handle end of stream
+          if (cleanEventData === '[DONE]') {
+            setIsLoading(false);
+            continue;
+          }
+          
+          try {
+            // First try to parse with standard JSON.parse
+            let parsedData;
             try {
-              const parsed = JSON.parse(jsonChunk);
-              const deltaText = extractDeltaText(parsed);
-              
-              if (deltaText) {
-                // Append to our accumulated text
-                responseTextRef.current += deltaText;
-                
-                // Update the message in the UI
+              parsedData = JSON.parse(cleanEventData);
+            } catch (standardJsonError) {
+              try {
+                // Try to use PartialJSON if available
+                parsedData = PartialJSON.parse(cleanEventData);
+              } catch (partialJsonError) {
+                // Last resort: manual JSON fix
+                parsedData = attemptJSONFix(cleanEventData);
+              }
+            }
+            
+            if (parsedData) {
+              const textDelta = extractDeltaText(parsedData);
+              if (textDelta) {
+                // Append the new text to our reference
+                responseTextRef.current += textDelta;
+                // Update the message with the latest text
                 updateMessageContent(responseTextRef.current, responseIdRef.current);
               }
-            } catch (innerError) {
-              console.error('Error parsing JSON chunk:', innerError);
-              console.log('Problematic JSON chunk:', jsonChunk);
             }
+          } catch (parseError) {
+            console.error('Error parsing event data:', parseError);
           }
-        } catch (parseError) {
-          console.error('Error processing chunk:', parseError);
         }
       }
     } catch (error) {
-      console.error('Error with fetch operation:', error);
-      setDebugInfo(\`Error: \${error instanceof Error ? error.message : 'Unknown error'}\`);
+      // Add error message
+      const errorItem: Item = {
+        type: "message",
+        role: "assistant",
+        content: [{ 
+          type: "output_text", 
+          text: "I'm sorry, I encountered an error while processing your request. Please try again."
+        }],
+      };
       
-      // Update the message with the error
-      updateMessageContent(
-        "I'm sorry, I encountered an error while processing your request. Please try again.",
-        responseIdRef.current
-      );
+      setMessages(prev => [...prev, errorItem]);
     } finally {
+      // Ensure loading state is properly reset
       setIsLoading(false);
     }
   };
@@ -712,13 +920,8 @@ export default function ${componentName}Assistant() {
         <div className="flex justify-between items-center">
           <div>
             <h2 className="text-lg font-semibold">${assistantTitle}</h2>
-            <p className="text-sm text-gray-600">${assistantDescription || 'Your AI Assistant'}</p>
+            <p className="text-sm text-gray-600">Your AI Assistant</p>
           </div>
-          {showDebug && (
-            <div className="text-xs text-gray-500 mt-1 overflow-auto max-h-20 p-1 border rounded">
-              {debugInfo || 'No debug info available'}
-            </div>
-          )}
         </div>
       </div>
       
@@ -733,65 +936,18 @@ export default function ${componentName}Assistant() {
         }}
       >
         <Chat 
-          messages={messages}
-          isLoading={isLoading}
+          messages={messages} 
           onSendMessage={handleSendMessage}
+          isLoading={isLoading}
+          starters={[
+            "Tell me about yourself",
+            "What can you help me with?",
+            "How does this demo work?",
+            "What features do you have?"
+          ]}
         />
       </div>
     </div>
   );
 }`;
-}
-
-// Helper to update the demo info samples
-async function updateDemoInfoSamples(demoId: string, demoTitle: string, contentMd: string) {
-  try {
-    // Instead of modifying the route.ts file with markdown content embedded as template literals,
-    // we'll create separate markdown files and have the route.js file reference them by ID
-
-    // 1. Create separate folders to store markdown content
-    const markdownDir = path.join(process.cwd(), 'public', 'markdown');
-    const demoMarkdownDir = path.join(markdownDir, demoId);
-    
-    // Ensure these directories exist
-    const markdownDirCreated = await createDirectorySafely(markdownDir);
-    if (!markdownDirCreated) {
-      throw new Error(`Failed to create markdown directory: ${markdownDir}`);
-    }
-    
-    const demoMarkdownDirCreated = await createDirectorySafely(demoMarkdownDir);
-    if (!demoMarkdownDirCreated) {
-      throw new Error(`Failed to create demo markdown directory: ${demoMarkdownDir}`);
-    }
-    
-    // 2. Write the default content, prompt, and implementation sections to separate files
-    // Default content (already saved to content.md in the main function)
-    
-    // Create a prompt-info.md file with demo prompt information
-    const promptInfoContent = `# ${demoTitle} Prompt
-
-This demo uses a custom prompt to guide its responses.`;
-
-    const promptInfoPath = path.join(demoMarkdownDir, 'prompt-info.md');
-    const promptInfoSaved = await writeFileSafely(promptInfoPath, promptInfoContent);
-    if (!promptInfoSaved) {
-      throw new Error(`Failed to save prompt info file: ${promptInfoPath}`);
-    }
-    
-    // Create an implementation.md file with implementation details
-    const implementationContent = `# Implementation Details
-
-This is a customizable demo created with the demo builder.`;
-
-    const implementationPath = path.join(demoMarkdownDir, 'implementation.md');
-    const implementationSaved = await writeFileSafely(implementationPath, implementationContent);
-    if (!implementationSaved) {
-      throw new Error(`Failed to save implementation file: ${implementationPath}`);
-    }
-    
-    console.log(`Successfully created markdown files for demo: ${demoId}`);
-  } catch (error) {
-    console.error('Error updating demo info:', error);
-    throw error; // Re-throw to be handled by the caller
-  }
 } 

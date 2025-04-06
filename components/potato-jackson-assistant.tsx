@@ -87,25 +87,25 @@ export default function PotatoJacksonAssistant() {
     const textToUpdate = pendingUpdateRef.current;
     
     // Perform the actual update
-    setMessages(prev => {
-      // Create a deep copy to avoid mutation
-      const newMessages = JSON.parse(JSON.stringify(prev));
-      const index = newMessages.findIndex(
-        (m: any) => m.type === 'message' && m.role === 'assistant' && m.id === messageId
-      );
-      
-      if (index !== -1) {
-        const assistantMessage = newMessages[index];
-        if (assistantMessage.type === 'message') {
-          assistantMessage.content = [{
-            type: 'output_text',
+      setMessages(prev => {
+        // Create a deep copy to avoid mutation
+        const newMessages = JSON.parse(JSON.stringify(prev));
+        const index = newMessages.findIndex(
+          (m: any) => m.type === 'message' && m.role === 'assistant' && m.id === messageId
+        );
+        
+        if (index !== -1) {
+          const assistantMessage = newMessages[index];
+          if (assistantMessage.type === 'message') {
+            assistantMessage.content = [{
+              type: 'output_text',
             text: textToUpdate
-          }];
+            }];
+          }
         }
-      }
-      
-      return newMessages;
-    });
+        
+        return newMessages;
+      });
     
     // After a small delay, mark update as complete
     setTimeout(() => {
@@ -233,12 +233,12 @@ export default function PotatoJacksonAssistant() {
       hasStartedStreamingRef.current = false;
       
       // Add user message to the list
-      setMessages(prev => [...prev, userItem]);
-      
+    setMessages(prev => [...prev, userItem]);
+
       // Create empty assistant message to start with
       const assistantItem: Item = {
-        type: "message",
-        role: "assistant",
+      type: "message",
+      role: "assistant",
         id: messageId,
         content: [{ 
           type: "output_text", 
@@ -252,9 +252,9 @@ export default function PotatoJacksonAssistant() {
       setDebugInfo(prev => prev + '\nAdded empty assistant message');
       
       // Reset the response text for this new conversation turn
-      responseTextRef.current = '';
-      responseIdRef.current = messageId;
-      
+    responseTextRef.current = '';
+    responseIdRef.current = messageId;
+
       // Call our API endpoint with streaming
       console.log("Fetching from /api/chat");
       setDebugInfo(prev => prev + '\nFetching from API...');
@@ -269,14 +269,14 @@ export default function PotatoJacksonAssistant() {
           demoId: "potato-jackson"
         }),
       });
-      
+
       if (!response.ok) {
         throw new Error(`Failed to get response from assistant: ${response.status} ${response.statusText}`);
       }
       
       console.log("Got response, starting to read stream");
       setDebugInfo(prev => prev + '\nGot response, reading stream...');
-      
+
       // Read the stream
       const reader = response.body?.getReader();
       if (!reader) throw new Error('Failed to get stream reader');
@@ -538,7 +538,7 @@ export default function PotatoJacksonAssistant() {
                 if (extractedText) {
                   console.log(`Extracted ${extractedText.length} characters from chunk`);
                   responseTextRef.current += extractedText;
-                  updateMessageContent(responseTextRef.current, responseIdRef.current);
+                updateMessageContent(responseTextRef.current, responseIdRef.current);
                 } else if (cleanEventData.length > 10000) {
                   // Only log a debug message for extremely large chunks but don't add truncation message
                   console.log("Very large chunk detected, but continuing without truncation");
@@ -579,9 +579,9 @@ export default function PotatoJacksonAssistant() {
     <div className="h-full w-full flex flex-col overflow-hidden">
       {/* Assistant Info Header - Fixed */}
       <div className="flex-shrink-0 px-4 py-3 border-b border-gray-200 bg-white">
-        <div className="flex justify-between items-center">
-          <div>
-            <h2 className="text-lg font-semibold">Potato Jackson</h2>
+          <div className="flex justify-between items-center">
+            <div>
+              <h2 className="text-lg font-semibold">Potato Jackson</h2>
             <p className="text-sm text-gray-600">Your kai helper but unique</p>
           </div>
           {showDebug && (
@@ -590,8 +590,8 @@ export default function PotatoJacksonAssistant() {
             </div>
           )}
         </div>
-      </div>
-      
+        </div>
+
       {/* Chat Component - Takes remaining height */}
       <div 
         className="flex-1 overflow-hidden relative" 
@@ -602,10 +602,10 @@ export default function PotatoJacksonAssistant() {
           position: "relative"
         }}
       >
-        <Chat 
+          <Chat
           items={messages} 
           onSendMessage={handleSendMessage}
-          isLoading={isLoading}
+            isLoading={isLoading}
           starters={[
             "Tell me about the operations management course",
             "What are the key formulas we need to know?",
