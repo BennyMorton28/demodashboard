@@ -25,7 +25,7 @@ export async function POST(req: Request) {
     }
 
     // Define paths to delete
-    const deletePromises = [];
+    const deletePromises: Promise<void>[] = [];
     const basePath = process.cwd();
     
     // 1. Delete markdown directory
