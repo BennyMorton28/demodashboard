@@ -34,17 +34,13 @@ const Chat: React.FC<ChatProps> = ({ items, messages, onSendMessage, isLoading =
     const lastItem = chatItems[chatItems.length - 1];
     
     // Only show dots if the last message is from assistant and has no content yet
-    // or if content exists but is very minimal (just starting to appear)
     return (
       lastItem.type === "message" && 
       lastItem.role === "assistant" && 
       (!lastItem.content || 
        !lastItem.content[0] || 
        !lastItem.content[0].text || 
-       lastItem.content[0].text.trim() === "" ||
-       // Add a small threshold - keep showing dots until we have at least 
-       // a few characters (this helps synchronize the transition)
-       (lastItem.content[0].text.trim().length < 3))
+       lastItem.content[0].text.trim() === "")
     );
   }, [isLoading, chatItems]);
 

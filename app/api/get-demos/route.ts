@@ -8,6 +8,7 @@ interface DemoInfo {
   title: string;
   description: string;
   hasCustomIcon: boolean;
+  iconExt?: string;
 }
 
 export async function GET() {
@@ -69,9 +70,31 @@ export async function GET() {
           }
         }
         
-        // Check if the demo has a custom icon
-        const iconPath = path.join(iconsFolder, `${demoId}.png`);
-        info.hasCustomIcon = fs.existsSync(iconPath);
+        // Look for an info file to get more metadata
+        const infoPath = path.join(process.cwd(), 'data', 'demo-info', `${demoId}.json`);
+        if (fs.existsSync(infoPath)) {
+          try {
+            const infoContent = await readFile(infoPath, 'utf-8');
+            const demoInfo = JSON.parse(infoContent);
+            
+            // Update with additional info
+            if (demoInfo.title) info.title = demoInfo.title;
+            if (demoInfo.description) info.description = demoInfo.description;
+          } catch (err) {
+            console.error(`Error reading demo info for ${demoId}:`, err);
+          }
+        }
+        
+        // Check for icon with various extensions
+        const extensions = ['.png', '.jpg', '.jpeg', '.svg'];
+        for (const ext of extensions) {
+          const iconPath = path.join(iconsFolder, `${demoId}${ext}`);
+          if (fs.existsSync(iconPath)) {
+            info.hasCustomIcon = true;
+            info.iconExt = ext;
+            break;
+          }
+        }
         
         return info;
       })

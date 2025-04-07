@@ -4,10 +4,10 @@ import { useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import DemoMarkdownDisplay from "@/components/demo-markdown-display";
-import FrankSacksAssistant from "@/components/frank-sacks-assistant";
+import SteveAssistant from "@/components/steve-assistant";
 import DemoLayout from "@/components/demo-layout";
 
-export default function FrankSacksDemo() {
+export default function SteveDemo() {
   const { data: session, status } = useSession();
   const router = useRouter();
   
@@ -31,9 +31,9 @@ export default function FrankSacksDemo() {
 
   return (
     <DemoLayout
-      title="Frank Sacks"
-      leftContent={<FrankSacksAssistant />}
-      rightContent={<DemoMarkdownDisplay demoId="frank-sacks" />}
+      title="steve"
+      leftContent={<SteveAssistant />}
+      rightContent={<DemoMarkdownDisplay demoId="steve" />}
     />
   );
 }

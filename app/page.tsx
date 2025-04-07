@@ -1,17 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import Image from "next/image";
 import React from "react";
 import AddDemoButton from "@/components/add-demo-button";
 import EditDemoButton from "@/components/edit-demo-button";
+import DemoCard from "@/components/demo-card";
 import { Toaster } from "react-hot-toast";
 
 // Demo card data structure
-interface DemoCard {
+interface DemoCardData {
   id: string;
   title: string;
   description: string;
@@ -30,7 +30,7 @@ const getInitials = (name: string): string => {
 };
 
 // List of hardcoded demo applications
-const hardcodedDemoCards: DemoCard[] = [
+const hardcodedDemoCards: DemoCardData[] = [
   {
     id: "bmsd-case-study",
     title: "BMSD Transportation Case Study",
@@ -50,38 +50,38 @@ const hardcodedDemoCards: DemoCard[] = [
 export default function Dashboard() {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const [demoCards, setDemoCards] = useState<DemoCard[]>(hardcodedDemoCards);
+  const [demoCards, setDemoCards] = useState<DemoCardData[]>(hardcodedDemoCards);
   const [loading, setLoading] = useState(true);
 
   // Function to fetch dynamic demos
-  const fetchDynamicDemos = async () => {
+  const fetchDemos = useCallback(async () => {
     try {
+      setLoading(true);
       const response = await fetch('/api/get-demos');
-      if (response.ok) {
-        const data = await response.json();
-        const dynamicDemos = data.demos.filter(
-          (demo: any) => !hardcodedDemoCards.some(card => card.id === demo.id)
-        ).map((demo: any) => ({
-          id: demo.id,
-          title: demo.title,
-          description: demo.description,
-          icon: `/icons/${demo.id}.png`,
-          path: `/demos/${demo.id}`
-        }));
-        
-        setDemoCards([...hardcodedDemoCards, ...dynamicDemos]);
-      }
+      const data = await response.json();
+      const dynamicDemos = data.demos.filter(
+        (demo: any) => !hardcodedDemoCards.some(card => card.id === demo.id)
+      ).map((demo: any) => ({
+        id: demo.id,
+        title: demo.title,
+        description: demo.description,
+        icon: `/icons/${demo.id}${demo.iconExt || '.png'}`, // Use the icon extension from the API
+        path: `/demos/${demo.id}`
+      }));
+      
+      setDemoCards([...hardcodedDemoCards, ...dynamicDemos]);
     } catch (error) {
       console.error('Error fetching demos:', error);
+      setDemoCards(hardcodedDemoCards);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   // Fetch dynamically created demos and add them to the list
   useEffect(() => {
-    fetchDynamicDemos();
-  }, []);
+    fetchDemos();
+  }, [fetchDemos]);
 
   useEffect(() => {
     console.log("Auth status:", status, "Session:", session ? "exists" : "none");
@@ -104,13 +104,28 @@ export default function Dashboard() {
     return null;
   }
 
+  // In the onError handler, we can simplify since we now use the correct extension
+  const onImageError = (e: any, demo: DemoCardData) => {
+    const imgElement = e.target as HTMLImageElement;
+    
+    // Replace with initials if the image fails to load
+    const targetDiv = imgElement.parentElement;
+    if (targetDiv) {
+      const initialsDiv = document.createElement('div');
+      initialsDiv.className = "text-gray-700 text-lg font-bold";
+      initialsDiv.textContent = getInitials(demo.title);
+      targetDiv.innerHTML = '';
+      targetDiv.appendChild(initialsDiv);
+    }
+  }
+
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
       {/* Toast notifications */}
       <Toaster position="top-right" />
       
       {/* Add Demo Button */}
-      <AddDemoButton onDemoAdded={fetchDynamicDemos} />
+      <AddDemoButton onDemoAdded={fetchDemos} />
       
       {/* Header */}
       <header className="h-16 border-b border-gray-200 bg-white">
@@ -136,100 +151,20 @@ export default function Dashboard() {
           {/* Demo cards grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {demoCards.map((demo) => (
-              <div key={demo.id} className="relative">
-                {/* Edit button - only show for custom demos, not built-in or coming soon */}
-                {!demo.path.startsWith('http') && 
-                 demo.path !== "#" && 
-                 !hardcodedDemoCards.some(card => card.id === demo.id) && (
-                  <div className="absolute top-2 right-2 z-10">
-                    <EditDemoButton 
-                      demoId={demo.id}
-                      title={demo.title}
-                      description={demo.description}
-                      onUpdate={fetchDynamicDemos}
-                    />
-                  </div>
-                )}
-                
-                <Link 
-                  href={demo.path}
-                  className={`block transition duration-200 
-                    ${demo.path === "#" 
-                      ? "opacity-70 cursor-not-allowed" 
-                      : "hover:shadow-lg transform hover:-translate-y-1"
-                    }`}
-                  onClick={(e) => demo.path === "#" && e.preventDefault()}
-                  target={demo.path.startsWith("http") ? "_blank" : undefined}
-                  rel={demo.path.startsWith("http") ? "noopener noreferrer" : undefined}
-                >
-                  <div className="bg-white rounded-lg shadow overflow-hidden h-full">
-                    <div className="p-6 flex flex-col h-full">
-                      <div className="flex items-center mb-4">
-                        <div className="bg-gray-100 rounded-lg p-3 mr-4 w-14 h-14 flex items-center justify-center">
-                          {demo.icon.endsWith('.svg') ? (
-                            <svg 
-                              xmlns="http://www.w3.org/2000/svg" 
-                              width="32" 
-                              height="32" 
-                              viewBox="0 0 24 24" 
-                              fill="none" 
-                              stroke="currentColor" 
-                              strokeWidth="2" 
-                              strokeLinecap="round" 
-                              strokeLinejoin="round"
-                              className="text-gray-700"
-                            >
-                              {demo.id.includes("bmsd-case-study") && (
-                                <>
-                                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                                  <circle cx="9" cy="7" r="4" />
-                                  <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                                </>
-                              )}
-                            </svg>
-                          ) : demo.icon ? (
-                            <div className="relative w-full h-full flex items-center justify-center">
-                              <Image 
-                                src={demo.icon}
-                                alt={`${demo.title} icon`}
-                                width={40}
-                                height={40}
-                                onError={(e) => {
-                                  // If image fails to load, replace with initials
-                                  const targetDiv = e.currentTarget.parentElement;
-                                  if (targetDiv) {
-                                    // Create the div with initials
-                                    const initialsDiv = document.createElement('div');
-                                    initialsDiv.className = "text-gray-700 text-lg font-bold";
-                                    initialsDiv.textContent = getInitials(demo.title);
-                                    
-                                    // Clear the element and append the new div
-                                    targetDiv.innerHTML = '';
-                                    targetDiv.appendChild(initialsDiv);
-                                  }
-                                }}
-                              />
-                            </div>
-                          ) : (
-                            // Fallback to initials if no valid icon
-                            <div className="text-gray-700 text-lg font-bold">
-                              {getInitials(demo.title)}
-                            </div>
-                          )}
-                        </div>
-                        <h3 className="text-lg font-semibold text-gray-900">{demo.title}</h3>
-                      </div>
-                      <p className="text-gray-600 text-sm flex-grow">{demo.description}</p>
-                      <div className="mt-4 pt-3 border-t border-gray-100 flex justify-end">
-                        <span className={`text-sm font-medium ${demo.path === "#" ? "text-gray-400" : "text-blue-600"}`}>
-                          {demo.path === "#" ? "Coming Soon" : "Explore Demo →"}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </Link>
-              </div>
+              <DemoCard
+                key={demo.id}
+                id={demo.id}
+                title={demo.title}
+                description={demo.description}
+                icon={demo.icon}
+                path={demo.path}
+                onImageError={onImageError}
+                showEdit={!demo.path.startsWith('http') && 
+                          demo.path !== "#" && 
+                          !hardcodedDemoCards.some(card => card.id === demo.id)}
+                EditComponent={EditDemoButton}
+                onUpdate={fetchDemos}
+              />
             ))}
           </div>
         </div>

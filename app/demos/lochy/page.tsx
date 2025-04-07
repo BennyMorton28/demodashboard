@@ -4,10 +4,10 @@ import { useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import DemoMarkdownDisplay from "@/components/demo-markdown-display";
-import MindayJawnsonAssistant from "@/components/minday-jawnson-assistant";
+import LochyAssistant from "@/components/lochy-assistant";
 import DemoLayout from "@/components/demo-layout";
 
-export default function MindayJawnsonDemo() {
+export default function LochyDemo() {
   const { data: session, status } = useSession();
   const router = useRouter();
   
@@ -31,9 +31,9 @@ export default function MindayJawnsonDemo() {
 
   return (
     <DemoLayout
-      title="Minday Jawnson"
-      leftContent={<MindayJawnsonAssistant />}
-      rightContent={<DemoMarkdownDisplay demoId="minday-jawnson" />}
+      title="lochy"
+      leftContent={<LochyAssistant />}
+      rightContent={<DemoMarkdownDisplay demoId="lochy" />}
     />
   );
 }

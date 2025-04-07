@@ -236,7 +236,12 @@ export default function AddDemoButton({ onDemoAdded }: AddDemoButtonProps) {
       logDebug("Creating FormData object...");
       const formData = new FormData();
       
+      // Generate demoId from the title (lowercase, dash-separated)
+      const demoId = demoTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      logDebug(`Generated demoId from title: ${demoId}`);
+      
       // Add basic form fields
+      formData.append("demoId", demoId);
       formData.append("password", password);
       formData.append("demoTitle", demoTitle);
       formData.append("assistantTitle", assistantTitle);
@@ -328,17 +333,14 @@ export default function AddDemoButton({ onDemoAdded }: AddDemoButtonProps) {
         }
         
         // Store the demo ID for navigation
-        const newDemoPath = `/demos/${result.demoId}`;
+        const newDemoPath = `/demos/${result.demoId}/create-success?id=${result.demoId}&title=${encodeURIComponent(assistantTitle)}`;
         setCreatedDemoPath(newDemoPath);
         logDebug(`Setting navigation path: ${newDemoPath}`);
         
-        // Add a delay before redirecting to the new demo
-        logDebug(`Setting timeout for redirect (5000ms)`);
-        setTimeout(() => {
-          logDebug(`Redirecting to: ${newDemoPath}`);
-          router.push(newDemoPath);
-          router.refresh();
-        }, 5000);
+        // Add a delay before redirecting to the success page
+        logDebug(`Redirecting to success page`);
+        router.push(newDemoPath);
+        router.refresh();
         
         return result;
       } catch (fetchError: any) {

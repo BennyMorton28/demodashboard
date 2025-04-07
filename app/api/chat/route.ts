@@ -11,10 +11,18 @@ const openai = new OpenAI({
   // Let the API use the organization associated with the API key
 });
 
+// Enhanced logging for debugging
+const logDebug = (message: string, data?: any) => {
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] ${message}`, data ? data : '');
+};
+
 export async function POST(req: NextRequest) {
   try {
     // Get the message and demo ID from the request
     const { message, demoId = 'knowledge-assistant' } = await req.json();
+    
+    logDebug(`Chat request received for demo: ${demoId}`, { message: message.substring(0, 50) + (message.length > 50 ? '...' : '') });
     
     if (!message) {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 });
@@ -22,6 +30,7 @@ export async function POST(req: NextRequest) {
 
     // Get the system prompt for the specified demo
     const systemPrompt = await getSystemPrompt(demoId);
+    logDebug(`Retrieved system prompt for ${demoId}`, { promptLength: systemPrompt.length });
     
     // Create a stream to write the response
     const stream = new TransformStream();
@@ -37,16 +46,16 @@ export async function POST(req: NextRequest) {
     });
     
     // Start the OpenAI streaming request in the background
-    streamOpenAIResponse(message, systemPrompt, writer).catch(error => {
+    streamOpenAIResponse(message, systemPrompt, writer, demoId).catch(error => {
       console.error('Error in OpenAI streaming:', error);
       writer.write(
         encoder.encode(
           `data: ${JSON.stringify({
-            event: 'error',
-            data: { message: error.message || 'Unknown error occurred' },
+            choices: [{ delta: { content: `Error: ${error.message || 'Unknown error occurred'}` } }]
           })}\n\n`
         )
       );
+      writer.write(encoder.encode(`data: [DONE]\n\n`));
       writer.close();
     });
     
@@ -66,8 +75,12 @@ async function getSystemPrompt(demoId: string): Promise<string> {
   const promptFilePath = path.join(process.cwd(), 'lib', 'prompts', `${demoId}-prompt.md`);
   
   if (existsSync(promptFilePath)) {
-    return fs.readFileSync(promptFilePath, 'utf-8');
+    logDebug(`Found custom prompt file for ${demoId}: ${promptFilePath}`);
+    const promptContent = fs.readFileSync(promptFilePath, 'utf-8');
+    return promptContent;
   }
+  
+  logDebug(`No custom prompt file found for ${demoId}, using fallback`);
   
   // Fallback prompts for built-in demos
   switch (demoId) {
@@ -99,8 +112,15 @@ async function getSystemPrompt(demoId: string): Promise<string> {
 const encoder = new TextEncoder();
 
 // Helper function to stream OpenAI response
-async function streamOpenAIResponse(message: string, systemPrompt: string, writer: WritableStreamDefaultWriter<any>) {
+async function streamOpenAIResponse(
+  message: string, 
+  systemPrompt: string, 
+  writer: WritableStreamDefaultWriter<any>,
+  demoId: string
+) {
   try {
+    logDebug(`Starting OpenAI stream for ${demoId}`);
+    
     const completion = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [
@@ -111,45 +131,49 @@ async function streamOpenAIResponse(message: string, systemPrompt: string, write
     });
     
     let fullResponse = '';
+    let chunkCount = 0;
+    
+    // Send a first empty delta to initialize the response
+    const initialEvent = {
+      choices: [{ delta: { content: "" } }]
+    };
+    writer.write(encoder.encode(`data: ${JSON.stringify(initialEvent)}\n\n`));
     
     // Process each chunk as it arrives
     for await (const chunk of completion) {
+      chunkCount++;
+      
       // Extract the text from the chunk
       const content = chunk.choices[0]?.delta?.content || '';
       fullResponse += content;
       
-      // Format the chunk for SSE
-      const event = {
-        event: 'response.output_text.delta', 
-        data: {
-          type: 'response.output_text.delta',
-          delta: content,
-        },
+      // Format in OpenAI completion format for compatibility
+      const formattedEvent = {
+        choices: [{ delta: { content } }]
       };
       
       // Write the formatted chunk to the stream
-      writer.write(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+      writer.write(encoder.encode(`data: ${JSON.stringify(formattedEvent)}\n\n`));
+      
+      // Log occasionally for debugging
+      if (chunkCount % 20 === 0) {
+        logDebug(`Streamed ${chunkCount} chunks so far for ${demoId}`);
+      }
     }
     
-    // Send an 'done' event
-    writer.write(
-      encoder.encode(
-        `data: ${JSON.stringify({
-          event: 'done',
-          data: {},
-        })}\n\n`
-      )
-    );
+    // Send completion signal
+    writer.write(encoder.encode(`data: [DONE]\n\n`));
+    logDebug(`Streaming completed for ${demoId}: ${chunkCount} chunks, ${fullResponse.length} chars`);
   } catch (error: any) {
-    console.error('Error in OpenAI request:', error);
+    console.error(`Error in OpenAI request for ${demoId}:`, error);
     writer.write(
       encoder.encode(
         `data: ${JSON.stringify({
-          event: 'error',
-          data: { message: error.message || 'Unknown error occurred' },
+          choices: [{ delta: { content: `Error: ${error.message || 'Unknown error occurred'}` } }]
         })}\n\n`
       )
     );
+    writer.write(encoder.encode(`data: [DONE]\n\n`));
   } finally {
     writer.close();
   }

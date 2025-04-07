@@ -4,10 +4,10 @@ import { useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import DemoMarkdownDisplay from "@/components/demo-markdown-display";
-import PotatoJacksonAssistant from "@/components/potato-jackson-assistant";
+import FrayzelAssistant from "@/components/frayzel-assistant";
 import DemoLayout from "@/components/demo-layout";
 
-export default function PotatoJacksonDemo() {
+export default function FrayzelDemo() {
   const { data: session, status } = useSession();
   const router = useRouter();
   
@@ -31,9 +31,9 @@ export default function PotatoJacksonDemo() {
 
   return (
     <DemoLayout
-      title="Potato Jackson"
-      leftContent={<PotatoJacksonAssistant />}
-      rightContent={<DemoMarkdownDisplay demoId="potato-jackson" />}
+      title="frayzel"
+      leftContent={<FrayzelAssistant />}
+      rightContent={<DemoMarkdownDisplay demoId="frayzel" />}
     />
   );
 }
