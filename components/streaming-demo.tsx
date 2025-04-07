@@ -92,9 +92,15 @@ const StreamingDemo = () => {
                 time: new Date().toLocaleTimeString()
               }]);
               
-              // Handle content chunks
+              // Handle both old and new API formats
               if (parsedData.event === 'content.chunk') {
+                // Handle old format (from our updated implementation)
                 const textDelta = parsedData.data.content;
+                responseText += textDelta;
+                setStreamingText(responseText);
+              } else if (parsedData.event === 'response.output_text.delta') {
+                // Handle new OpenAI API format 
+                const textDelta = parsedData.data.delta;
                 responseText += textDelta;
                 setStreamingText(responseText);
               }

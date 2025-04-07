@@ -24,56 +24,108 @@ export async function POST(request: Request) {
     // Initialize the OpenAI client
     const openai = new OpenAI();
     
-    // Create a streaming response using chat completions
-    const stream = await openai.chat.completions.create({
-      model: "gpt-4-turbo-preview",
-      messages: [
-        {
-          role: "user",
-          content: message,
-        },
-      ],
-      stream: true,
-      temperature: 0.7,
-      max_tokens: 1000,
-    });
+    // Determine if we should use the new API format (responses) or legacy format (chat.completions)
+    const useNewAPIFormat = process.env.USE_NEW_API_FORMAT === 'true';
+    
+    let stream;
+    
+    if (useNewAPIFormat) {
+      // New API format
+      console.log("Using new OpenAI API format (responses)");
+      stream = await openai.responses.create({
+        model: "gpt-4o",
+        input: [
+          {
+            role: "user",
+            content: message,
+          },
+        ],
+        stream: true,
+        temperature: 0.7,
+      });
+    } else {
+      // Legacy API format
+      console.log("Using legacy OpenAI API format (chat.completions)");
+      stream = await openai.chat.completions.create({
+        model: "gpt-4-turbo-preview",
+        messages: [
+          {
+            role: "user",
+            content: message,
+          },
+        ],
+        stream: true,
+        temperature: 0.7,
+        max_tokens: 1000,
+      });
+    }
 
     // Create a ReadableStream that emits SSE data
     const readableStream = new ReadableStream({
       async start(controller) {
         try {
-          // Process each chunk in the stream
-          for await (const chunk of stream) {
-            const content = chunk.choices[0]?.delta?.content || '';
-            if (content) {
-              // Add to buffer
-              buffer += content;
-              
-              // Flush buffer if it's long enough or contains sentence-ending punctuation
-              if (buffer.length >= FLUSH_AFTER_CHARS || /[.!?]\s*$/.test(buffer)) {
-                // Format the event with type and data for the client
-                const data = JSON.stringify({
-                  event: 'content.chunk',
-                  data: {
-                    content: buffer
+          if (useNewAPIFormat) {
+            // Process stream from new API format
+            for await (const event of stream) {
+              if (event.type === 'response.output_text.delta') {
+                const content = event.data.delta;
+                if (content) {
+                  // Add to buffer
+                  buffer += content;
+                  
+                  // Flush buffer if it's long enough or contains sentence-ending punctuation
+                  if (buffer.length >= FLUSH_AFTER_CHARS || /[.!?]\s*$/.test(buffer)) {
+                    // Pass through the original event format for compatibility
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+                    buffer = ''; // Clear buffer after sending
                   }
-                });
+                }
+              } else {
+                // Pass through other event types
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+              }
+            }
+          } else {
+            // Process stream from legacy API format
+            for await (const chunk of stream) {
+              const content = chunk.choices[0]?.delta?.content || '';
+              if (content) {
+                // Add to buffer
+                buffer += content;
                 
-                // Send the event as SSE format
-                controller.enqueue(encoder.encode(`data: ${data}\n\n`));
-                buffer = ''; // Clear buffer after sending
+                // Flush buffer if it's long enough or contains sentence-ending punctuation
+                if (buffer.length >= FLUSH_AFTER_CHARS || /[.!?]\s*$/.test(buffer)) {
+                  // Format the event with type and data for the client
+                  const data = JSON.stringify({
+                    event: 'content.chunk',
+                    data: {
+                      content: buffer
+                    }
+                  });
+                  
+                  // Send the event as SSE format
+                  controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+                  buffer = ''; // Clear buffer after sending
+                }
               }
             }
           }
           
           // Send any remaining buffered content
           if (buffer) {
-            const data = JSON.stringify({
-              event: 'content.chunk',
-              data: {
-                content: buffer
-              }
-            });
+            const data = useNewAPIFormat
+              ? JSON.stringify({
+                  event: 'response.output_text.delta',
+                  data: {
+                    delta: buffer
+                  }
+                })
+              : JSON.stringify({
+                  event: 'content.chunk',
+                  data: {
+                    content: buffer
+                  }
+                });
             controller.enqueue(encoder.encode(`data: ${data}\n\n`));
           }
           
