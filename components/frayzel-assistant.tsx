@@ -33,7 +33,7 @@ export default function FrayzelAssistant() {
   const [isLoading, setIsLoading] = useState(false);
   const responseTextRef = useRef("");
   const responseIdRef = useRef(`msg_${Date.now()}`);
-  const bufferTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bufferTimerRef = useRef<NodeJS.Timeout | null>(null);
   const messageBufferRef = useRef("");
 
   // Cleanup function for timers
