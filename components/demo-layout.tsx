@@ -89,21 +89,21 @@ const DemoLayout: React.FC<DemoLayoutProps> = ({ title, leftContent, rightConten
         ref={footerRef} 
         className="border-t border-gray-200 bg-white fixed bottom-0 left-0 right-0 z-30"
       >
-        <div className="container mx-auto px-6 py-3">
+        <div className="container mx-auto px-6 py-1.5">
           <div className="flex flex-col md:flex-row items-center justify-between">
-            <div className="text-sm text-gray-600 mb-2 md:mb-0">
+            <div className="text-xs text-gray-600 mb-1 md:mb-0">
               © 2025 Noyes AI. All rights reserved.
             </div>
-            <div className="text-sm text-gray-600">
+            <div className="text-xs text-gray-600">
               Want help adding AI tools to your classroom? 
               <a href="mailto:ben@noyesai.com" className="text-blue-600 hover:underline ml-1">Contact us</a>
             </div>
-            <div className="mt-2 md:mt-0">
+            <div className="mt-1 md:mt-0">
               <Image 
                 src="/logo.PNG" 
                 alt="Noyes AI Logo" 
-                width={120} 
-                height={24} 
+                width={60} 
+                height={12} 
               />
             </div>
           </div>

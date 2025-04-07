@@ -418,59 +418,34 @@ export async function POST(request: NextRequest) {
     
     // Extract fields
     const demoId = formData.get('demoId') as string;
-    const assistantTitle = formData.get('assistantTitle') as string;
-    const description = formData.get('description') as string;
-    const author = formData.get('author') as string;
-    const category = formData.get('category') as string;
-    const promptFile = formData.get('promptFile') as File;
+    const isMultiAssistant = formData.get('isMultiAssistant') === 'true';
     const contentFile = formData.get('contentFile') as File;
     
-    // Validate required fields
-    if (!demoId || !assistantTitle || !promptFile) {
-      return NextResponse.json(
-        { error: 'Missing required fields: demoId, assistantTitle, promptFile' },
-        { status: 400 }
-      );
-    }
-    
-    logDebug('Processing demo upload', { 
-      demoId, 
-      assistantTitle, 
-      description, 
-      author,
-      category,
-      promptFileName: promptFile?.name, 
-      contentFileName: contentFile?.name 
-    });
-    
-    // Validate demoId format (lowercase, dash-separated)
-    if (!/^[a-z0-9-]+$/.test(demoId)) {
-      return NextResponse.json(
-        { error: 'Invalid demoId format. Use lowercase letters, numbers, and dashes only.' },
-        { status: 400 }
-      );
-    }
-    
-    // Create demo-specific directories
-    const markdownDir = path.join(markdownBaseDir, demoId);
-    await createDirectorySafely(markdownDir);
-    
-    // Save the prompt file
-    try {
-      const promptPath = path.join(promptsDir, `${demoId}-prompt.md`);
-      const promptBuffer = Buffer.from(await promptFile.arrayBuffer());
-      await writeFile(promptPath, promptBuffer);
-      logDebug(`Prompt file saved to ${promptPath}`);
-    } catch (error) {
-      logDebug('Error saving prompt file', error);
-      return NextResponse.json(
-        { error: 'Error saving prompt file' },
-        { status: 500 }
-      );
-    }
-    
-    // Save the content file if provided
-    if (contentFile) {
+    // Different validation paths for single vs multi-assistant demos
+    if (isMultiAssistant) {
+      // Multi-assistant demo validation
+      const assistantsCount = parseInt(formData.get('assistantsCount') as string, 10);
+      const demoTitle = formData.get('demoTitle') as string;
+      
+      if (!demoId || !contentFile || isNaN(assistantsCount) || assistantsCount <= 0 || !demoTitle) {
+        return NextResponse.json(
+          { error: 'Missing required fields for multi-assistant demo: demoId, demoTitle, contentFile, assistantsCount' },
+          { status: 400 }
+        );
+      }
+      
+      logDebug('Processing multi-assistant demo upload', { 
+        demoId,
+        demoTitle,
+        assistantsCount,
+        contentFileName: contentFile?.name
+      });
+      
+      // Create necessary directories
+      const markdownDir = path.join(markdownBaseDir, demoId);
+      await createDirectorySafely(markdownDir);
+      
+      // Save the content file
       try {
         const contentPath = path.join(markdownDir, "content.md");
         const contentBuffer = Buffer.from(await contentFile.arrayBuffer());
@@ -483,110 +458,542 @@ export async function POST(request: NextRequest) {
           { status: 500 }
         );
       }
-    }
-    
-    // Generate and save the demo info file
-    try {
-      const demoInfoPath = path.join(dataDir, 'demo-info', `${demoId}.json`);
-      const demoInfo = generateDemoInfo(demoId, assistantTitle, description, author, category);
-      await writeFile(demoInfoPath, demoInfo);
-      logDebug(`Demo info saved to ${demoInfoPath}`);
-    } catch (error) {
-      logDebug('Error saving demo info', error);
-      return NextResponse.json(
-        { error: 'Error saving demo info' },
-        { status: 500 }
-      );
-    }
-    
-    // Generate and save the assistant component
-    try {
-      const componentDir = path.join(process.cwd(), 'components');
-      await createDirectorySafely(componentDir);
       
-      const componentPath = path.join(componentDir, `${demoId}-assistant.tsx`);
-      const componentContent = generateAssistantComponent(demoId, assistantTitle);
-      await writeFile(componentPath, componentContent);
-      logDebug(`Assistant component saved to ${componentPath}`);
-    } catch (error) {
-      logDebug('Error saving assistant component', error);
-      return NextResponse.json(
-        { error: 'Error saving assistant component' },
-        { status: 500 }
-      );
-    }
-    
-    // Process icon file if provided
-    const iconFile = formData.get('iconFile') as File;
-    if (iconFile && iconFile.size > 0) {
-      try {
-        const iconDir = path.join(process.cwd(), 'public', 'icons');
-        await createDirectorySafely(iconDir);
+      // Process assistants data
+      const assistants = [];
+      for (let i = 0; i < assistantsCount; i++) {
+        const name = formData.get(`assistant_${i}_name`) as string;
+        const promptFile = formData.get(`assistant_${i}_promptFile`) as File;
+        const description = formData.get(`assistant_${i}_description`) as string || '';
+        const iconFile = formData.get(`assistant_${i}_iconFile`) as File || null;
+        const isLocked = formData.get(`assistant_${i}_isLocked`) === 'true';
+        const password = formData.get(`assistant_${i}_password`) as string || '';
         
-        // Get the file extension from the uploaded file or default to .png
-        const originalExt = path.extname(iconFile.name);
-        const fileExt = originalExt || '.png';
+        // Save prompt file for this assistant
+        try {
+          const promptPath = path.join(promptsDir, `${demoId}-assistant-${i}-prompt.md`);
+          const promptBuffer = Buffer.from(await promptFile.arrayBuffer());
+          await writeFile(promptPath, promptBuffer);
+          logDebug(`Prompt file for assistant ${i} saved to ${promptPath}`);
+        } catch (error) {
+          logDebug(`Error saving prompt file for assistant ${i}`, error);
+          return NextResponse.json(
+            { error: `Error saving prompt file for assistant ${i}` },
+            { status: 500 }
+          );
+        }
         
-        // Always use lowercase extension
-        const normalizedExt = fileExt.toLowerCase();
-        const iconFilename = `${demoId}${normalizedExt}`;
-        const iconPath = path.join(iconDir, iconFilename);
+        // Save assistant icon if provided
+        let iconPath = '';
+        if (iconFile && iconFile.size > 0) {
+          try {
+            const iconDir = path.join(process.cwd(), 'public', 'icons');
+            
+            // Get file extension and normalize
+            const originalExt = path.extname(iconFile.name);
+            const fileExt = originalExt || '.png';
+            const normalizedExt = fileExt.toLowerCase();
+            
+            // Create unique filename for this assistant's icon
+            const iconFilename = `${demoId}-assistant-${i}${normalizedExt}`;
+            iconPath = `/icons/${iconFilename}`; // Store the path for later use
+            
+            // Save the file
+            const fullIconPath = path.join(iconDir, iconFilename);
+            const iconBuffer = Buffer.from(await iconFile.arrayBuffer());
+            await writeFile(fullIconPath, iconBuffer);
+            logDebug(`Icon for assistant ${i} saved to ${fullIconPath}`);
+          } catch (error) {
+            logDebug(`Error saving icon for assistant ${i}`, error);
+            // Continue even if icon saving fails
+          }
+        } else {
+          // Create default icon with initials
+          try {
+            const iconDir = path.join(process.cwd(), 'public', 'icons');
+            
+            // Generate SVG with initials
+            const initials = name
+              .split(' ')
+              .map(part => part.charAt(0))
+              .join('')
+              .toUpperCase()
+              .substring(0, 2);
+            
+            const svgContent = `<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
+              <rect width="100%" height="100%" fill="#f3f4f6"/>
+              <text 
+                x="50%" 
+                y="50%" 
+                font-family="Arial, sans-serif" 
+                font-size="200" 
+                font-weight="bold" 
+                fill="#374151" 
+                text-anchor="middle" 
+                dominant-baseline="middle"
+              >${initials}</text>
+            </svg>`;
+            
+            const iconFilename = `${demoId}-assistant-${i}.svg`;
+            iconPath = `/icons/${iconFilename}`; // Store the path for later use
+            
+            const fullIconPath = path.join(iconDir, iconFilename);
+            await writeFile(fullIconPath, svgContent);
+            logDebug(`Default icon created for assistant ${i} at ${fullIconPath}`);
+          } catch (error) {
+            logDebug(`Error creating default icon for assistant ${i}`, error);
+            // Continue without an icon if creation fails
+          }
+        }
         
-        const iconBuffer = Buffer.from(await iconFile.arrayBuffer());
-        await writeFile(iconPath, iconBuffer);
-        logDebug(`Icon file saved to ${iconPath} (extension: ${normalizedExt})`);
-      } catch (error) {
-        logDebug('Error saving icon file', error);
-        // Continue with the process even if icon saving fails
+        // Add assistant info to our array
+        assistants.push({
+          id: i.toString(),
+          name,
+          description,
+          icon: iconPath,
+          isLocked,
+          password
+        });
       }
-    } else {
-      // Create a default icon using initials if no icon is provided
+      
+      // Save assistants configuration to a JSON file
+      const assistantsConfig = {
+        demoId,
+        assistants
+      };
+      
       try {
-        logDebug('No icon provided, creating default icon with initials');
-        const iconDir = path.join(process.cwd(), 'public', 'icons');
-        await createDirectorySafely(iconDir);
+        const configDir = path.join(dataDir, 'multi-assistants');
+        await createDirectorySafely(configDir);
         
-        // Generate SVG with initials
-        const getInitials = (name: string): string => {
-          return name
-            .split(' ')
-            .map(part => part.charAt(0))
-            .join('')
-            .toUpperCase()
-            .substring(0, 2);
+        const configPath = path.join(configDir, `${demoId}.json`);
+        await writeFile(configPath, JSON.stringify(assistantsConfig, null, 2));
+        logDebug(`Assistants configuration saved to ${configPath}`);
+      } catch (error) {
+        logDebug('Error saving assistants configuration', error);
+        return NextResponse.json(
+          { error: 'Error saving assistants configuration' },
+          { status: 500 }
+        );
+      }
+      
+      // Generate and save the demo info file for dashboard display
+      try {
+        const demoInfoPath = path.join(dataDir, 'demo-info', `${demoId}.json`);
+        const demoInfo = {
+          id: demoId,
+          title: demoTitle,
+          description: `Multi-assistant demo with ${assistantsCount} assistants`,
+          type: "multi-assistant",
+          created: new Date().toISOString(),
+          updated: new Date().toISOString(),
         };
         
-        const initials = getInitials(assistantTitle);
-        const svgContent = `<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
-          <rect width="100%" height="100%" fill="#f3f4f6"/>
-          <text 
-            x="50%" 
-            y="50%" 
-            font-family="Arial, sans-serif" 
-            font-size="200" 
-            font-weight="bold" 
-            fill="#374151" 
-            text-anchor="middle" 
-            dominant-baseline="middle"
-          >${initials}</text>
-        </svg>`;
-        
-        const iconPath = path.join(iconDir, `${demoId}.svg`);
-        await writeFile(iconPath, svgContent);
-        logDebug(`Default icon created at ${iconPath}`);
+        await writeFile(demoInfoPath, JSON.stringify(demoInfo, null, 2));
+        logDebug(`Demo info saved to ${demoInfoPath}`);
       } catch (error) {
-        logDebug('Error creating default icon', error);
-        // Continue with the process even if icon creation fails
+        logDebug('Error saving demo info', error);
+        return NextResponse.json(
+          { error: 'Error saving demo info' },
+          { status: 500 }
+        );
       }
+      
+      // Create the demo page for multi-assistant demo
+      try {
+        const demoPageDir = path.join(process.cwd(), 'app', 'demos', demoId);
+        await createDirectorySafely(demoPageDir);
+        
+        const componentName = demoId.split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('');
+        const pageContent = `"use client";
+
+import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
+import DemoMarkdownDisplay from "@/components/demo-markdown-display";
+import MultiAssistantDemoLayout from "@/components/multi-assistant-demo-layout";
+import MultiAssistantChat from "@/components/multi-assistant-chat";
+
+// Define the Assistant type
+interface Assistant {
+  id: string;
+  name: string;
+  description?: string;
+  icon?: string;
+  isLocked: boolean;
+  password?: string;
+}
+
+export default function ${componentName}Demo() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
+  const [assistants, setAssistants] = useState<Assistant[]>([]);
+  const [activeAssistant, setActiveAssistant] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  
+  // Fetch assistants configuration
+  useEffect(() => {
+    if (status === "authenticated") {
+      fetchAssistants();
+    }
+  }, [status]);
+  
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      router.push("/auth/signin");
+    }
+  }, [status, router]);
+  
+  const fetchAssistants = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(\`/api/multi-assistants?demoId=${demoId}\`);
+      
+      if (!response.ok) {
+        throw new Error("Failed to fetch assistants configuration");
+      }
+      
+      const data = await response.json();
+      
+      if (data.assistants && data.assistants.length > 0) {
+        setAssistants(data.assistants);
+        // Set first unlocked assistant as active
+        const firstUnlocked = data.assistants.find(a => !a.isLocked);
+        if (firstUnlocked) {
+          setActiveAssistant(firstUnlocked.id);
+        } else {
+          setActiveAssistant(data.assistants[0].id);
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching assistants:", err);
+      setError("Failed to load assistants");
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Handler for changing active assistant
+  const handleAssistantChange = (assistantId: string) => {
+    setActiveAssistant(assistantId);
+  };
+  
+  // Handler for unlocking assistant
+  const handleUnlockAssistant = async (assistantId: string, password: string): Promise<boolean> => {
+    const assistant = assistants.find(a => a.id === assistantId);
+    
+    if (!assistant) return false;
+    
+    // Check if password matches
+    const passwordMatches = assistant.password === password;
+    
+    if (passwordMatches) {
+      // Update the assistant to be unlocked
+      setAssistants(prev => 
+        prev.map((a: Assistant) => 
+          a.id === assistantId 
+            ? { ...a, isLocked: false } 
+            : a
+        )
+      );
     }
     
-    // Create the demo page directory and page file
-    try {
-      const demoPageDir = path.join(process.cwd(), 'app', 'demos', demoId);
-      await createDirectorySafely(demoPageDir);
+    return passwordMatches;
+  };
+  
+  if (status === "loading" || loading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="text-lg">Loading...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="text-lg text-red-500">{error}</div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return null;
+  }
+
+  // Find the currently active assistant to get its name
+  const currentAssistant = assistants.find(a => a.id === activeAssistant);
+  const assistantName = currentAssistant?.name || "Assistant";
+
+  return (
+    <MultiAssistantDemoLayout
+      title="${demoTitle}"
+      assistants={assistants}
+      activeAssistant={activeAssistant}
+      onAssistantChange={handleAssistantChange}
+      onUnlockAssistant={handleUnlockAssistant}
+      contentComponent={<DemoMarkdownDisplay demoId="${demoId}" />}
+      chatComponent={
+        <MultiAssistantChat 
+          demoId="${demoId}" 
+          assistantId={activeAssistant} 
+          assistantName={assistantName} 
+        />
+      }
+    />
+  );
+}`;
+        
+        const pagePath = path.join(demoPageDir, 'page.tsx');
+        await writeFile(pagePath, pageContent);
+        logDebug(`Multi-assistant demo page created at ${pagePath}`);
+      } catch (error) {
+        logDebug('Error creating multi-assistant demo page', error);
+        // Don't fail the whole process if page creation fails
+      }
       
-      const componentName = demoId.split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('');
-      const pageContent = `"use client";
+      // Process icon file for the demo card
+      const iconFile = formData.get('iconFile') as File;
+      if (iconFile && iconFile.size > 0) {
+        try {
+          const iconDir = path.join(process.cwd(), 'public', 'icons');
+          await createDirectorySafely(iconDir);
+          
+          // Get the file extension from the uploaded file or default to .png
+          const originalExt = path.extname(iconFile.name);
+          const fileExt = originalExt || '.png';
+          
+          // Always use lowercase extension
+          const normalizedExt = fileExt.toLowerCase();
+          const iconFilename = `${demoId}${normalizedExt}`;
+          const iconPath = path.join(iconDir, iconFilename);
+          
+          const iconBuffer = Buffer.from(await iconFile.arrayBuffer());
+          await writeFile(iconPath, iconBuffer);
+          logDebug(`Demo icon saved to ${iconPath} (extension: ${normalizedExt})`);
+        } catch (error) {
+          logDebug('Error saving demo icon', error);
+          // Continue with the process even if icon saving fails
+        }
+      } else {
+        // Create a default icon for the demo
+        try {
+          logDebug('No demo icon provided, creating default icon with initials');
+          const iconDir = path.join(process.cwd(), 'public', 'icons');
+          
+          // Generate SVG with initials
+          const getInitials = (name: string): string => {
+            return name
+              .split(' ')
+              .map(part => part.charAt(0))
+              .join('')
+              .toUpperCase()
+              .substring(0, 2);
+          };
+          
+          const initials = getInitials(demoTitle);
+          const svgContent = `<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100%" height="100%" fill="#f3f4f6"/>
+            <text 
+              x="50%" 
+              y="50%" 
+              font-family="Arial, sans-serif" 
+              font-size="200" 
+              font-weight="bold" 
+              fill="#374151" 
+              text-anchor="middle" 
+              dominant-baseline="middle"
+            >${initials}</text>
+          </svg>`;
+          
+          const iconPath = path.join(iconDir, `${demoId}.svg`);
+          await writeFile(iconPath, svgContent);
+          logDebug(`Default demo icon created at ${iconPath}`);
+        } catch (error) {
+          logDebug('Error creating default demo icon', error);
+          // Continue with the process even if icon creation fails
+        }
+      }
+      
+      // Return success response
+      return NextResponse.json({ 
+        success: true, 
+        message: 'Multi-assistant demo created successfully',
+        demoId
+      });
+    } else {
+      // Single assistant demo validation
+      const assistantTitle = formData.get('assistantTitle') as string;
+      const description = formData.get('description') as string;
+      const author = formData.get('author') as string;
+      const category = formData.get('category') as string;
+      const promptFile = formData.get('promptFile') as File;
+      
+      // Validate required fields
+      if (!demoId || !assistantTitle || !promptFile) {
+        return NextResponse.json(
+          { error: 'Missing required fields: demoId, assistantTitle, promptFile' },
+          { status: 400 }
+        );
+      }
+      
+      logDebug('Processing demo upload', { 
+        demoId, 
+        assistantTitle, 
+        description, 
+        author,
+        category,
+        promptFileName: promptFile?.name, 
+        contentFileName: contentFile?.name 
+      });
+      
+      // Validate demoId format (lowercase, dash-separated)
+      if (!/^[a-z0-9-]+$/.test(demoId)) {
+        return NextResponse.json(
+          { error: 'Invalid demoId format. Use lowercase letters, numbers, and dashes only.' },
+          { status: 400 }
+        );
+      }
+      
+      // Create demo-specific directories
+      const markdownDir = path.join(markdownBaseDir, demoId);
+      await createDirectorySafely(markdownDir);
+      
+      // Save the prompt file
+      try {
+        const promptPath = path.join(promptsDir, `${demoId}-prompt.md`);
+        const promptBuffer = Buffer.from(await promptFile.arrayBuffer());
+        await writeFile(promptPath, promptBuffer);
+        logDebug(`Prompt file saved to ${promptPath}`);
+      } catch (error) {
+        logDebug('Error saving prompt file', error);
+        return NextResponse.json(
+          { error: 'Error saving prompt file' },
+          { status: 500 }
+        );
+      }
+      
+      // Save the content file if provided
+      if (contentFile) {
+        try {
+          const contentPath = path.join(markdownDir, "content.md");
+          const contentBuffer = Buffer.from(await contentFile.arrayBuffer());
+          await writeFile(contentPath, contentBuffer);
+          logDebug(`Content file saved to ${contentPath}`);
+        } catch (error) {
+          logDebug('Error saving content file', error);
+          return NextResponse.json(
+            { error: 'Error saving content file' },
+            { status: 500 }
+          );
+        }
+      }
+      
+      // Generate and save the demo info file
+      try {
+        const demoInfoPath = path.join(dataDir, 'demo-info', `${demoId}.json`);
+        const demoInfo = generateDemoInfo(demoId, assistantTitle, description, author, category);
+        await writeFile(demoInfoPath, demoInfo);
+        logDebug(`Demo info saved to ${demoInfoPath}`);
+      } catch (error) {
+        logDebug('Error saving demo info', error);
+        return NextResponse.json(
+          { error: 'Error saving demo info' },
+          { status: 500 }
+        );
+      }
+      
+      // Generate and save the assistant component
+      try {
+        const componentDir = path.join(process.cwd(), 'components');
+        await createDirectorySafely(componentDir);
+        
+        const componentPath = path.join(componentDir, `${demoId}-assistant.tsx`);
+        const componentContent = generateAssistantComponent(demoId, assistantTitle);
+        await writeFile(componentPath, componentContent);
+        logDebug(`Assistant component saved to ${componentPath}`);
+      } catch (error) {
+        logDebug('Error saving assistant component', error);
+        return NextResponse.json(
+          { error: 'Error saving assistant component' },
+          { status: 500 }
+        );
+      }
+      
+      // Process icon file if provided
+      const iconFile = formData.get('iconFile') as File;
+      if (iconFile && iconFile.size > 0) {
+        try {
+          const iconDir = path.join(process.cwd(), 'public', 'icons');
+          await createDirectorySafely(iconDir);
+          
+          // Get the file extension from the uploaded file or default to .png
+          const originalExt = path.extname(iconFile.name);
+          const fileExt = originalExt || '.png';
+          
+          // Always use lowercase extension
+          const normalizedExt = fileExt.toLowerCase();
+          const iconFilename = `${demoId}${normalizedExt}`;
+          const iconPath = path.join(iconDir, iconFilename);
+          
+          const iconBuffer = Buffer.from(await iconFile.arrayBuffer());
+          await writeFile(iconPath, iconBuffer);
+          logDebug(`Icon file saved to ${iconPath} (extension: ${normalizedExt})`);
+        } catch (error) {
+          logDebug('Error saving icon file', error);
+          // Continue with the process even if icon saving fails
+        }
+      } else {
+        // Create a default icon using initials if no icon is provided
+        try {
+          logDebug('No icon provided, creating default icon with initials');
+          const iconDir = path.join(process.cwd(), 'public', 'icons');
+          await createDirectorySafely(iconDir);
+          
+          // Generate SVG with initials
+          const getInitials = (name: string): string => {
+            return name
+              .split(' ')
+              .map(part => part.charAt(0))
+              .join('')
+              .toUpperCase()
+              .substring(0, 2);
+          };
+          
+          const initials = getInitials(assistantTitle);
+          const svgContent = `<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100%" height="100%" fill="#f3f4f6"/>
+            <text 
+              x="50%" 
+              y="50%" 
+              font-family="Arial, sans-serif" 
+              font-size="200" 
+              font-weight="bold" 
+              fill="#374151" 
+              text-anchor="middle" 
+              dominant-baseline="middle"
+            >${initials}</text>
+          </svg>`;
+          
+          const iconPath = path.join(iconDir, `${demoId}.svg`);
+          await writeFile(iconPath, svgContent);
+          logDebug(`Default icon created at ${iconPath}`);
+        } catch (error) {
+          logDebug('Error creating default icon', error);
+          // Continue with the process even if icon creation fails
+        }
+      }
+      
+      // Create the demo page directory and page file
+      try {
+        const demoPageDir = path.join(process.cwd(), 'app', 'demos', demoId);
+        await createDirectorySafely(demoPageDir);
+        
+        const componentName = demoId.split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('');
+        const pageContent = `"use client";
 
 import { useEffect } from "react";
 import { useSession } from "next-auth/react";
@@ -625,21 +1032,21 @@ export default function ${componentName}Demo() {
     />
   );
 }`;
+        
+        const pagePath = path.join(demoPageDir, 'page.tsx');
+        await writeFile(pagePath, pageContent);
+        logDebug(`Demo page created at ${pagePath}`);
+      } catch (error) {
+        logDebug('Error creating demo page', error);
+        // Don't fail the whole process if page creation fails
+      }
       
-      const pagePath = path.join(demoPageDir, 'page.tsx');
-      await writeFile(pagePath, pageContent);
-      logDebug(`Demo page created at ${pagePath}`);
-    } catch (error) {
-      logDebug('Error creating demo page', error);
-      // Don't fail the whole process if page creation fails
+      return NextResponse.json({ 
+        success: true, 
+        message: 'Demo created successfully',
+        demoId
+      });
     }
-    
-    return NextResponse.json({ 
-      success: true, 
-      message: 'Demo created successfully',
-      demoId
-    });
-    
   } catch (error) {
     logDebug('Error in POST /api/upload', error);
     return NextResponse.json(

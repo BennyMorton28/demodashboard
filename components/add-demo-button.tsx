@@ -5,6 +5,10 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { PlusIcon, InfoIcon, XIcon, CheckIcon } from "lucide-react";
 import Link from "next/link";
+import MultiAssistantForm from "./multi-assistant-form";
+
+// Import the Assistant type from the multi-assistant-form
+import { Assistant } from "./multi-assistant-form";
 
 // Tooltip component
 const Tooltip = ({ content, children }: { content: React.ReactNode, children: React.ReactNode }) => {
@@ -98,27 +102,41 @@ function safeStringify(obj: any): string {
 
 export default function AddDemoButton({ onDemoAdded }: AddDemoButtonProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'single' | 'multi'>('single');
   const [passwordVerified, setPasswordVerified] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
-  const [successMessage, setSuccessMessage] = useState("");
-  const [wasRenamed, setWasRenamed] = useState(false);
-  const [createdDemoId, setCreatedDemoId] = useState("");
-  const [createdDemoPath, setCreatedDemoPath] = useState("");
-  const [originalDemoId, setOriginalDemoId] = useState("");
   const [demoTitle, setDemoTitle] = useState("");
   const [assistantTitle, setAssistantTitle] = useState("");
   const [assistantDescription, setAssistantDescription] = useState("");
   const [promptFile, setPromptFile] = useState<File | null>(null);
   const [contentFile, setContentFile] = useState<File | null>(null);
   const [iconFile, setIconFile] = useState<File | null>(null);
-  const [previewIcon, setPreviewIcon] = useState<string>("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [previewIcon, setPreviewIcon] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [debugInfo, setDebugInfo] = useState<string>("");
+  const [success, setSuccess] = useState(false);
+  const [wasRenamed, setWasRenamed] = useState(false);
+  const [createdDemoId, setCreatedDemoId] = useState("");
+  const [originalDemoId, setOriginalDemoId] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+  const [createdDemoPath, setCreatedDemoPath] = useState("");
+  
+  // Multi-assistant state
+  const [assistants, setAssistants] = useState<Assistant[]>([
+    {
+      id: `assistant_${Date.now()}`,
+      name: "",
+      description: "",
+      promptFile: null,
+      iconFile: null,
+      previewIcon: null,
+      password: "",
+      isLocked: false
+    }
+  ]);
+  
   const router = useRouter();
-  const timeoutId = useRef<number | null>(null);
 
   // Enhanced logger for debugging
   const logDebug = (message: string, data?: any) => {
@@ -135,7 +153,7 @@ export default function AddDemoButton({ onDemoAdded }: AddDemoButtonProps) {
       setPasswordVerified(true);
       setError("");
     } else {
-      setError("Incorrect password. Please try again.");
+      setError("Incorrect password");
     }
   };
 
@@ -156,10 +174,12 @@ export default function AddDemoButton({ onDemoAdded }: AddDemoButtonProps) {
       const file = e.target.files[0];
       setIconFile(file);
       
-      // Create a preview
+      // Preview the icon
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setPreviewIcon(reader.result as string);
+      reader.onload = (e) => {
+        if (e.target && e.target.result) {
+          setPreviewIcon(e.target.result as string);
+        }
       };
       reader.readAsDataURL(file);
     }
@@ -206,19 +226,101 @@ export default function AddDemoButton({ onDemoAdded }: AddDemoButtonProps) {
     setDebugInfo("Starting demo creation process...");
 
     try {
-      // Validate form
-      if (!demoTitle || !assistantTitle || !promptFile || !contentFile) {
-        const missingFields = [];
-        if (!demoTitle) missingFields.push('Demo Title');
-        if (!assistantTitle) missingFields.push('Assistant Title');
-        if (!promptFile) missingFields.push('Prompt File');
-        if (!contentFile) missingFields.push('Content File');
+      // Create FormData
+      logDebug("Creating FormData object...");
+      const formData = new FormData();
+      
+      // Generate demoId from the title (lowercase, dash-separated)
+      const demoId = demoTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      logDebug(`Generated demoId from title: ${demoId}`);
+      
+      // Add basic form fields that are common to both
+      formData.append("demoId", demoId);
+      formData.append("password", password);
+      formData.append("demoTitle", demoTitle);
+      
+      if (activeTab === 'single') {
+        // Validate single-assistant form
+        if (!demoTitle || !assistantTitle || !promptFile || !contentFile) {
+          const missingFields = [];
+          if (!demoTitle) missingFields.push('Demo Title');
+          if (!assistantTitle) missingFields.push('Assistant Title');
+          if (!promptFile) missingFields.push('Prompt File');
+          if (!contentFile) missingFields.push('Content File');
+          
+          const errorMsg = `Please fill in all required fields: ${missingFields.join(', ')}`;
+          logDebug(`Validation error: ${errorMsg}`);
+          setError(errorMsg);
+          setIsSubmitting(false);
+          return;
+        }
         
-        const errorMsg = `Please fill in all required fields: ${missingFields.join(', ')}`;
-        logDebug(`Validation error: ${errorMsg}`);
-        setError(errorMsg);
-        setIsSubmitting(false);
-        return;
+        // Single-assistant specific fields
+        formData.append("assistantTitle", assistantTitle);
+        if (assistantDescription) {
+          formData.append("assistantDescription", assistantDescription);
+        }
+        
+        // Add files directly
+        logDebug(`Adding files to FormData - promptFile: ${promptFile?.name}, contentFile: ${contentFile?.name}`);
+        formData.append("promptFile", promptFile!);
+        formData.append("contentFile", contentFile!);
+      } else {
+        // Multi-assistant validation
+        if (!demoTitle || !contentFile) {
+          const missingFields = [];
+          if (!demoTitle) missingFields.push('Demo Title');
+          if (!contentFile) missingFields.push('Content File');
+          
+          const errorMsg = `Please fill in all required fields: ${missingFields.join(', ')}`;
+          logDebug(`Validation error: ${errorMsg}`);
+          setError(errorMsg);
+          setIsSubmitting(false);
+          return;
+        }
+        
+        // Validate assistants
+        const invalidAssistants = assistants.filter(a => !a.name || !a.promptFile);
+        if (invalidAssistants.length > 0) {
+          const errorMsg = "Please fill in all required fields for each assistant (Name and Prompt File)";
+          logDebug(`Validation error: ${errorMsg}`);
+          setError(errorMsg);
+          setIsSubmitting(false);
+          return;
+        }
+        
+        // Validate locked assistants have passwords
+        const lockedWithoutPassword = assistants.filter(a => a.isLocked && !a.password);
+        if (lockedWithoutPassword.length > 0) {
+          const errorMsg = "All locked assistants must have a password";
+          logDebug(`Validation error: ${errorMsg}`);
+          setError(errorMsg);
+          setIsSubmitting(false);
+          return;
+        }
+        
+        // Multi-assistant specific fields
+        formData.append("isMultiAssistant", "true");
+        formData.append("assistantsCount", assistants.length.toString());
+        
+        // Add each assistant's data
+        assistants.forEach((assistant, index) => {
+          formData.append(`assistant_${index}_name`, assistant.name);
+          formData.append(`assistant_${index}_promptFile`, assistant.promptFile!);
+          if (assistant.description) {
+            formData.append(`assistant_${index}_description`, assistant.description);
+          }
+          if (assistant.iconFile) {
+            formData.append(`assistant_${index}_iconFile`, assistant.iconFile);
+          }
+          formData.append(`assistant_${index}_isLocked`, assistant.isLocked.toString());
+          if (assistant.isLocked) {
+            formData.append(`assistant_${index}_password`, assistant.password);
+          }
+        });
+        
+        // Add content file (for multi-assistant)
+        formData.append("contentFile", contentFile!);
       }
       
       // Validate file sizes
@@ -232,29 +334,7 @@ export default function AddDemoButton({ onDemoAdded }: AddDemoButtonProps) {
         return;
       }
 
-      // Create FormData
-      logDebug("Creating FormData object...");
-      const formData = new FormData();
-      
-      // Generate demoId from the title (lowercase, dash-separated)
-      const demoId = demoTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-      logDebug(`Generated demoId from title: ${demoId}`);
-      
-      // Add basic form fields
-      formData.append("demoId", demoId);
-      formData.append("password", password);
-      formData.append("demoTitle", demoTitle);
-      formData.append("assistantTitle", assistantTitle);
-      if (assistantDescription) {
-        formData.append("assistantDescription", assistantDescription);
-      }
-      
-      // Add files directly
-      logDebug(`Adding files to FormData - promptFile: ${promptFile?.name}, contentFile: ${contentFile?.name}`);
-      formData.append("promptFile", promptFile);
-      formData.append("contentFile", contentFile);
-      
-      // Add icon if provided
+      // Add icon if provided (common to both types)
       if (iconFile) {
         logDebug(`Adding icon file: ${iconFile.name}`);
         formData.append("iconFile", iconFile);
@@ -472,239 +552,433 @@ export default function AddDemoButton({ onDemoAdded }: AddDemoButtonProps) {
                   </div>
                 </div>
               ) : (
-                <form onSubmit={handleSubmit}>
-                  <div className="space-y-6">
-                    {/* Demo Title */}
-                    <div>
-                      <div className="flex items-center mb-1">
-                        <label htmlFor="demoTitle" className="block text-sm font-medium text-gray-700">
-                          Demo Title <span className="text-red-500">*</span>
-                        </label>
-                        <Tooltip content="This will be the main title of your demo, displayed in the dashboard card and on the demo page. (Max 50 characters)">
-                          <button
-                            type="button"
-                            className="ml-1 text-gray-400 hover:text-gray-500"
-                          >
-                            <InfoIcon size={16} />
-                          </button>
-                        </Tooltip>
-                      </div>
-                      <input
-                        id="demoTitle"
-                        type="text"
-                        value={demoTitle}
-                        onChange={(e) => setDemoTitle(e.target.value.substring(0, 50))}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        maxLength={50}
-                        required
-                      />
-                      <div className="text-xs text-gray-500 mt-1">
-                        {demoTitle.length}/50 characters
-                      </div>
-                    </div>
-
-                    {/* Assistant Title */}
-                    <div>
-                      <div className="flex items-center mb-1">
-                        <label htmlFor="assistantTitle" className="block text-sm font-medium text-gray-700">
-                          Assistant Title <span className="text-red-500">*</span>
-                        </label>
-                        <Tooltip content="This will be displayed as the title of the assistant in the chat interface. (Max 30 characters)">
-                          <button
-                            type="button"
-                            className="ml-1 text-gray-400 hover:text-gray-500"
-                          >
-                            <InfoIcon size={16} />
-                          </button>
-                        </Tooltip>
-                      </div>
-                      <input
-                        id="assistantTitle"
-                        type="text"
-                        value={assistantTitle}
-                        onChange={(e) => setAssistantTitle(e.target.value.substring(0, 30))}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        maxLength={30}
-                        required
-                      />
-                      <div className="text-xs text-gray-500 mt-1">
-                        {assistantTitle.length}/30 characters
-                      </div>
-                    </div>
-
-                    {/* Assistant Description */}
-                    <div>
-                      <div className="flex items-center mb-1">
-                        <label htmlFor="assistantDescription" className="block text-sm font-medium text-gray-700">
-                          Assistant Description
-                        </label>
-                        <Tooltip content="A short description of what this assistant does. This will be displayed under the assistant title. (Max 100 characters)">
-                          <button
-                            type="button"
-                            className="ml-1 text-gray-400 hover:text-gray-500"
-                          >
-                            <InfoIcon size={16} />
-                          </button>
-                        </Tooltip>
-                      </div>
-                      <textarea
-                        id="assistantDescription"
-                        value={assistantDescription}
-                        onChange={(e) => setAssistantDescription(e.target.value.substring(0, 100))}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        maxLength={100}
-                        rows={2}
-                      />
-                      <div className="text-xs text-gray-500 mt-1">
-                        {assistantDescription.length}/100 characters
-                      </div>
-                    </div>
-
-                    {/* Prompt File */}
-                    <div>
-                      <div className="flex items-center mb-1">
-                        <label htmlFor="promptFile" className="block text-sm font-medium text-gray-700">
-                          Prompt File (Markdown) <span className="text-red-500">*</span>
-                        </label>
-                        <Tooltip content="Upload a markdown file containing the system prompt for your assistant. This defines how the assistant behaves and responds.">
-                          <button
-                            type="button"
-                            className="ml-1 text-gray-400 hover:text-gray-500"
-                          >
-                            <InfoIcon size={16} />
-                          </button>
-                        </Tooltip>
-                      </div>
-                      <input
-                        id="promptFile"
-                        type="file"
-                        onChange={handlePromptFileChange}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        accept=".md,.txt"
-                        required
-                      />
-                      {promptFile && (
-                        <div className="text-xs text-gray-500 mt-1">
-                          Selected file: {promptFile.name}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Content File */}
-                    <div>
-                      <div className="flex items-center mb-1">
-                        <label htmlFor="contentFile" className="block text-sm font-medium text-gray-700">
-                          Content File (Markdown) <span className="text-red-500">*</span>
-                        </label>
-                        <Tooltip content="Upload a markdown file containing the content to be displayed in the right side of the demo screen.">
-                          <button
-                            type="button"
-                            className="ml-1 text-gray-400 hover:text-gray-500"
-                          >
-                            <InfoIcon size={16} />
-                          </button>
-                        </Tooltip>
-                      </div>
-                      <input
-                        id="contentFile"
-                        type="file"
-                        onChange={handleContentFileChange}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        accept=".md,.txt"
-                        required
-                      />
-                      {contentFile && (
-                        <div className="text-xs text-gray-500 mt-1">
-                          Selected file: {contentFile.name}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Icon File */}
-                    <div>
-                      <div className="flex items-center mb-1">
-                        <label htmlFor="iconFile" className="block text-sm font-medium text-gray-700">
-                          Icon Image
-                        </label>
-                        <Tooltip content="Upload a square image for your demo icon. If not provided, we'll create an icon with the first two letters of your demo title.">
-                          <button
-                            type="button"
-                            className="ml-1 text-gray-400 hover:text-gray-500"
-                          >
-                            <InfoIcon size={16} />
-                          </button>
-                        </Tooltip>
-                      </div>
-                      <input
-                        id="iconFile"
-                        type="file"
-                        onChange={handleIconFileChange}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        accept=".jpg,.jpeg,.png,.svg"
-                      />
-                      
-                      <div className="flex items-center mt-3">
-                        <div className="mr-4">
-                          <p className="text-xs text-gray-700 mb-1">Icon Preview:</p>
-                          <div className="bg-gray-100 rounded-lg p-3 w-16 h-16 flex items-center justify-center overflow-hidden">
-                            {previewIcon ? (
-                              <img 
-                                src={previewIcon} 
-                                alt="Icon preview" 
-                                className="max-w-full max-h-full"
-                              />
-                            ) : demoTitle ? (
-                              <div className="text-gray-700 text-2xl font-bold">
-                                {generateInitialsIcon()}
-                              </div>
-                            ) : (
-                              <span className="text-gray-400 text-xs">No icon</span>
-                            )}
-                          </div>
-                        </div>
-                        <div>
-                          <p className="text-xs text-gray-500">
-                            {previewIcon 
-                              ? "Custom icon uploaded" 
-                              : demoTitle 
-                                ? `Using initials: ${generateInitialsIcon()}` 
-                                : "Enter a title to generate initials or upload an image"}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {error && <p className="text-red-500">{error}</p>}
-
-                    <div className="flex justify-end space-x-3 pt-3 border-t border-gray-200">
+                <div>
+                  {/* Tab selector */}
+                  <div className="mb-6 border-b border-gray-200">
+                    <div className="flex space-x-1">
                       <button
-                        type="button"
-                        onClick={() => setIsModalOpen(false)}
-                        className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
-                        disabled={isSubmitting}
+                        className={`py-2 px-4 border-b-2 font-medium ${
+                          activeTab === 'single' 
+                            ? 'border-blue-500 text-blue-600' 
+                            : 'border-transparent text-gray-500 hover:text-gray-700'
+                        }`}
+                        onClick={() => setActiveTab('single')}
                       >
-                        Cancel
+                        Create One Assistant Demo
                       </button>
                       <button
-                        type="submit"
-                        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center"
-                        disabled={isSubmitting}
+                        className={`py-2 px-4 border-b-2 font-medium ${
+                          activeTab === 'multi' 
+                            ? 'border-blue-500 text-blue-600' 
+                            : 'border-transparent text-gray-500 hover:text-gray-700'
+                        }`}
+                        onClick={() => setActiveTab('multi')}
                       >
-                        {isSubmitting ? (
-                          <>
-                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            Processing...
-                          </>
-                        ) : (
-                          "Create Demo"
-                        )}
+                        Create Multiple Assistant Demo
                       </button>
                     </div>
                   </div>
-                </form>
+
+                  {activeTab === 'single' ? (
+                    <form onSubmit={handleSubmit}>
+                      <div className="space-y-6">
+                        {/* Demo Title */}
+                        <div>
+                          <div className="flex items-center mb-1">
+                            <label htmlFor="demoTitle" className="block text-sm font-medium text-gray-700">
+                              Demo Title <span className="text-red-500">*</span>
+                            </label>
+                            <Tooltip content="This will be the main title of your demo, displayed in the dashboard card and on the demo page. (Max 50 characters)">
+                              <button
+                                type="button"
+                                className="ml-1 text-gray-400 hover:text-gray-500"
+                              >
+                                <InfoIcon size={16} />
+                              </button>
+                            </Tooltip>
+                          </div>
+                          <input
+                            id="demoTitle"
+                            type="text"
+                            value={demoTitle}
+                            onChange={(e) => setDemoTitle(e.target.value.substring(0, 50))}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            maxLength={50}
+                            required
+                          />
+                          <div className="text-xs text-gray-500 mt-1">
+                            {demoTitle.length}/50 characters
+                          </div>
+                        </div>
+
+                        {/* Assistant Title */}
+                        <div>
+                          <div className="flex items-center mb-1">
+                            <label htmlFor="assistantTitle" className="block text-sm font-medium text-gray-700">
+                              Assistant Title <span className="text-red-500">*</span>
+                            </label>
+                            <Tooltip content="This will be displayed as the title of the assistant in the chat interface. (Max 30 characters)">
+                              <button
+                                type="button"
+                                className="ml-1 text-gray-400 hover:text-gray-500"
+                              >
+                                <InfoIcon size={16} />
+                              </button>
+                            </Tooltip>
+                          </div>
+                          <input
+                            id="assistantTitle"
+                            type="text"
+                            value={assistantTitle}
+                            onChange={(e) => setAssistantTitle(e.target.value.substring(0, 30))}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            maxLength={30}
+                            required
+                          />
+                          <div className="text-xs text-gray-500 mt-1">
+                            {assistantTitle.length}/30 characters
+                          </div>
+                        </div>
+
+                        {/* Assistant Description */}
+                        <div>
+                          <div className="flex items-center mb-1">
+                            <label htmlFor="assistantDescription" className="block text-sm font-medium text-gray-700">
+                              Assistant Description
+                            </label>
+                            <Tooltip content="A short description of what this assistant does. This will be displayed under the assistant title. (Max 100 characters)">
+                              <button
+                                type="button"
+                                className="ml-1 text-gray-400 hover:text-gray-500"
+                              >
+                                <InfoIcon size={16} />
+                              </button>
+                            </Tooltip>
+                          </div>
+                          <textarea
+                            id="assistantDescription"
+                            value={assistantDescription}
+                            onChange={(e) => setAssistantDescription(e.target.value.substring(0, 100))}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            maxLength={100}
+                            rows={2}
+                          />
+                          <div className="text-xs text-gray-500 mt-1">
+                            {assistantDescription.length}/100 characters
+                          </div>
+                        </div>
+
+                        {/* Prompt File */}
+                        <div>
+                          <div className="flex items-center mb-1">
+                            <label htmlFor="promptFile" className="block text-sm font-medium text-gray-700">
+                              Prompt File (Markdown) <span className="text-red-500">*</span>
+                            </label>
+                            <Tooltip content="Upload a markdown file containing the system prompt for your assistant. This defines how the assistant behaves and responds.">
+                              <button
+                                type="button"
+                                className="ml-1 text-gray-400 hover:text-gray-500"
+                              >
+                                <InfoIcon size={16} />
+                              </button>
+                            </Tooltip>
+                          </div>
+                          <input
+                            id="promptFile"
+                            type="file"
+                            onChange={handlePromptFileChange}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            accept=".md,.txt"
+                            required
+                          />
+                          {promptFile && (
+                            <div className="text-xs text-gray-500 mt-1">
+                              Selected file: {promptFile.name}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Content File */}
+                        <div>
+                          <div className="flex items-center mb-1">
+                            <label htmlFor="contentFile" className="block text-sm font-medium text-gray-700">
+                              Content File (Markdown) <span className="text-red-500">*</span>
+                            </label>
+                            <Tooltip content="Upload a markdown file containing the content to be displayed in the right side of the demo screen.">
+                              <button
+                                type="button"
+                                className="ml-1 text-gray-400 hover:text-gray-500"
+                              >
+                                <InfoIcon size={16} />
+                              </button>
+                            </Tooltip>
+                          </div>
+                          <input
+                            id="contentFile"
+                            type="file"
+                            onChange={handleContentFileChange}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            accept=".md,.txt"
+                            required
+                          />
+                          {contentFile && (
+                            <div className="text-xs text-gray-500 mt-1">
+                              Selected file: {contentFile.name}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Icon File */}
+                        <div>
+                          <div className="flex items-center mb-1">
+                            <label htmlFor="iconFile" className="block text-sm font-medium text-gray-700">
+                              Icon Image
+                            </label>
+                            <Tooltip content="Upload a square image for your demo icon. If not provided, we'll create an icon with the first two letters of your demo title.">
+                              <button
+                                type="button"
+                                className="ml-1 text-gray-400 hover:text-gray-500"
+                              >
+                                <InfoIcon size={16} />
+                              </button>
+                            </Tooltip>
+                          </div>
+                          <input
+                            id="iconFile"
+                            type="file"
+                            onChange={handleIconFileChange}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            accept=".jpg,.jpeg,.png,.svg"
+                          />
+                          
+                          <div className="flex items-center mt-3">
+                            <div className="mr-4">
+                              <p className="text-xs text-gray-700 mb-1">Icon Preview:</p>
+                              <div className="bg-gray-100 rounded-lg p-3 w-16 h-16 flex items-center justify-center overflow-hidden">
+                                {previewIcon ? (
+                                  <img 
+                                    src={previewIcon} 
+                                    alt="Icon preview" 
+                                    className="max-w-full max-h-full"
+                                  />
+                                ) : demoTitle ? (
+                                  <div className="text-gray-700 text-2xl font-bold">
+                                    {generateInitialsIcon()}
+                                  </div>
+                                ) : (
+                                  <span className="text-gray-400 text-xs">No icon</span>
+                                )}
+                              </div>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-500">
+                                {previewIcon 
+                                  ? "Custom icon uploaded" 
+                                  : demoTitle 
+                                    ? `Using initials: ${generateInitialsIcon()}` 
+                                    : "Enter a title to generate initials or upload an image"}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {error && <p className="text-red-500">{error}</p>}
+
+                        <div className="flex justify-end space-x-3 pt-3 border-t border-gray-200">
+                          <button
+                            type="button"
+                            onClick={() => setIsModalOpen(false)}
+                            className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                            disabled={isSubmitting}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center"
+                            disabled={isSubmitting}
+                          >
+                            {isSubmitting ? (
+                              <>
+                                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Processing...
+                              </>
+                            ) : (
+                              "Create Demo"
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </form>
+                  ) : (
+                    <div>
+                      <p className="text-gray-600 mb-4">
+                        Create a demo with multiple assistants that users can choose from.
+                        Each assistant can have its own prompt and appearance.
+                      </p>
+                      
+                      <form onSubmit={handleSubmit}>
+                        <div className="space-y-6">
+                          {/* Demo Title */}
+                          <div>
+                            <div className="flex items-center mb-1">
+                              <label htmlFor="multiDemoTitle" className="block text-sm font-medium text-gray-700">
+                                Demo Title <span className="text-red-500">*</span>
+                              </label>
+                              <Tooltip content="This will be the main title of your demo, displayed in the dashboard card and on the demo page. (Max 50 characters)">
+                                <button
+                                  type="button"
+                                  className="ml-1 text-gray-400 hover:text-gray-500"
+                                >
+                                  <InfoIcon size={16} />
+                                </button>
+                              </Tooltip>
+                            </div>
+                            <input
+                              id="multiDemoTitle"
+                              type="text"
+                              value={demoTitle}
+                              onChange={(e) => setDemoTitle(e.target.value.substring(0, 50))}
+                              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              maxLength={50}
+                              required
+                            />
+                            <div className="text-xs text-gray-500 mt-1">
+                              {demoTitle.length}/50 characters
+                            </div>
+                          </div>
+
+                          {/* Content File */}
+                          <div>
+                            <div className="flex items-center mb-1">
+                              <label htmlFor="multiContentFile" className="block text-sm font-medium text-gray-700">
+                                Content File (Markdown) <span className="text-red-500">*</span>
+                              </label>
+                              <Tooltip content="Upload a markdown file containing the content to be displayed in the right side of the demo screen.">
+                                <button
+                                  type="button"
+                                  className="ml-1 text-gray-400 hover:text-gray-500"
+                                >
+                                  <InfoIcon size={16} />
+                                </button>
+                              </Tooltip>
+                            </div>
+                            <input
+                              id="multiContentFile"
+                              type="file"
+                              onChange={handleContentFileChange}
+                              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              accept=".md,.txt"
+                              required
+                            />
+                            {contentFile && (
+                              <div className="text-xs text-gray-500 mt-1">
+                                Selected file: {contentFile.name}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Icon File */}
+                          <div>
+                            <div className="flex items-center mb-1">
+                              <label htmlFor="multiIconFile" className="block text-sm font-medium text-gray-700">
+                                Demo Icon Image
+                              </label>
+                              <Tooltip content="Upload a square image for your demo icon. If not provided, we'll create an icon with the first two letters of your demo title.">
+                                <button
+                                  type="button"
+                                  className="ml-1 text-gray-400 hover:text-gray-500"
+                                >
+                                  <InfoIcon size={16} />
+                                </button>
+                              </Tooltip>
+                            </div>
+                            <input
+                              id="multiIconFile"
+                              type="file"
+                              onChange={handleIconFileChange}
+                              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              accept=".jpg,.jpeg,.png,.svg"
+                            />
+                            
+                            <div className="flex items-center mt-3">
+                              <div className="mr-4">
+                                <p className="text-xs text-gray-700 mb-1">Icon Preview:</p>
+                                <div className="bg-gray-100 rounded-lg p-3 w-16 h-16 flex items-center justify-center overflow-hidden">
+                                  {previewIcon ? (
+                                    <img 
+                                      src={previewIcon} 
+                                      alt="Icon preview" 
+                                      className="max-w-full max-h-full"
+                                    />
+                                  ) : demoTitle ? (
+                                    <div className="text-gray-700 text-2xl font-bold">
+                                      {generateInitialsIcon()}
+                                    </div>
+                                  ) : (
+                                    <span className="text-gray-400 text-xs">No icon</span>
+                                  )}
+                                </div>
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-500">
+                                  {previewIcon 
+                                    ? "Custom icon uploaded" 
+                                    : demoTitle 
+                                      ? `Using initials: ${generateInitialsIcon()}` 
+                                      : "Enter a title to generate initials or upload an image"}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Multiple Assistants */}
+                          <div className="mt-6 pt-6 border-t border-gray-200">
+                            <h3 className="text-lg font-medium text-gray-800 mb-4">Assistant Configuration</h3>
+                            <MultiAssistantForm
+                              assistants={assistants}
+                              setAssistants={setAssistants}
+                              onError={setError}
+                            />
+                          </div>
+
+                          {error && <p className="text-red-500">{error}</p>}
+
+                          <div className="flex justify-end space-x-3 pt-3 border-t border-gray-200">
+                            <button
+                              type="button"
+                              onClick={() => setIsModalOpen(false)}
+                              className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                              disabled={isSubmitting}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="submit"
+                              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center"
+                              disabled={isSubmitting}
+                            >
+                              {isSubmitting ? (
+                                <>
+                                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                  </svg>
+                                  Processing...
+                                </>
+                              ) : (
+                                "Create Multi-Assistant Demo"
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      </form>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </div>
