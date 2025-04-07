@@ -462,7 +462,7 @@ export default function KaiAssistant() {
                 ];
                 
                 // Try each pattern until we find a match
-                let extractedText = null;
+                let extractedText: string | null = null;
                 for (const pattern of patterns) {
                   const match = cleanEventData.match(pattern);
                   if (match && match[1]) {
