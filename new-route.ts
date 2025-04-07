@@ -174,7 +174,7 @@ async function generateUniqueDemoId(baseId: string): Promise<string> {
   }
   
   // Check if any of these locations have conflicts
-  const conflicts: string[] = [];
+  const conflicts = [] as Array<string>;
   
   // Check demo directories
   if (existsSync(placesToCheck[0])) {
