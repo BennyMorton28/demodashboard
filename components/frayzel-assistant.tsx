@@ -2,10 +2,24 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import Chat from "./chat";
-import { Item } from "@/lib/assistant";
+import { Item, MessageItem, ContentItem } from "@/lib/assistant";
+
+type ContentType = "input_text" | "output_text" | "refusal" | "output_audio";
+
+interface MessageContent {
+  type: ContentType;
+  text: string;
+}
+
+interface Message {
+  type: "message";
+  role: "assistant" | "user";
+  id: string;
+  content: MessageContent[];
+}
 
 export default function FrayzelAssistant() {
-  const [messages, setMessages] = useState([
+  const [messages, setMessages] = useState<Message[]>([
     {
       type: "message",
       role: "assistant",
@@ -19,7 +33,7 @@ export default function FrayzelAssistant() {
   const [isLoading, setIsLoading] = useState(false);
   const responseTextRef = useRef("");
   const responseIdRef = useRef(`msg_${Date.now()}`);
-  const bufferTimerRef = useRef(null);
+  const bufferTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messageBufferRef = useRef("");
 
   // Cleanup function for timers
@@ -32,7 +46,7 @@ export default function FrayzelAssistant() {
   }, []);
 
   // Function to update message content with rate limiting
-  const updateMessageContent = (text, messageId) => {
+  const updateMessageContent = (text: string, messageId: string) => {
     messageBufferRef.current = text;
     
     // If we already have a pending update, let it handle the new content
@@ -43,7 +57,7 @@ export default function FrayzelAssistant() {
       setMessages(prev => {
         const newMessages = JSON.parse(JSON.stringify(prev));
         const index = newMessages.findIndex(
-          (m) => m.type === "message" && m.role === "assistant" && m.id === messageId
+          (m: Message) => m.type === "message" && m.role === "assistant" && m.id === messageId
         );
 
         if (index !== -1) {
@@ -80,15 +94,16 @@ export default function FrayzelAssistant() {
     }, 50); // Small delay to batch rapid updates
   };
 
-  const handleSendMessage = async (message) => {
+  const handleSendMessage = async (message: string) => {
     if (!message.trim()) return;
 
     // Create a unique ID for this message
     const messageId = `msg_${Date.now()}`;
 
-    const userItem = {
+    const userItem: Message = {
       type: "message",
       role: "user",
+      id: messageId,
       content: [{ type: "input_text", text: message.trim() }],
     };
 
@@ -105,7 +120,7 @@ export default function FrayzelAssistant() {
       }
 
       // Create empty assistant message
-      const assistantItem = {
+      const assistantItem: Message = {
         type: "message",
         role: "assistant",
         id: messageId,
@@ -147,7 +162,7 @@ export default function FrayzelAssistant() {
       let fullText = "";
 
       // Helper function to extract delta text from different data structures
-      const extractDeltaText = (parsed) => {
+      const extractDeltaText = (parsed: any) => {
         if (parsed.choices && parsed.choices[0]?.delta?.content) {
           return parsed.choices[0].delta.content;
         }
@@ -161,21 +176,17 @@ export default function FrayzelAssistant() {
       };
 
       // Helper function to attempt to fix malformed JSON
-      const tryParseJSON = (text) => {
+      const tryParseJSON = (text: string) => {
         try {
           return JSON.parse(text);
         } catch (e) {
-          // Try to fix common JSON issues
-          // 1. If it starts with data: 
           if (text.startsWith("data: ")) {
             return tryParseJSON(text.substring(6));
           }
-          // 2. Check if we need to add closing brackets/braces
           const fixedText = text
             .replace(/\n/g, "")
             .trim();
             
-          // If all else fails, return null
           return null;
         }
       };
@@ -230,9 +241,10 @@ export default function FrayzelAssistant() {
     } catch (error) {
       console.error("Error in handleSendMessage:", error);
       // Add error message
-      const errorItem = {
+      const errorItem: Message = {
         type: "message",
         role: "assistant",
+        id: `error_${Date.now()}`,
         content: [{ 
           type: "output_text", 
           text: "Sorry, I encountered an error processing your request." 
