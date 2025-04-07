@@ -1,11 +1,25 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import Chat from "./chat";
-import { Item } from "@/lib/assistant";
+import { Item, MessageItem } from "@/lib/assistant";
+
+type ContentType = "input_text" | "output_text" | "refusal" | "output_audio";
+
+interface MessageContent {
+  type: ContentType;
+  text: string;
+}
+
+interface Message {
+  type: "message";
+  role: "assistant" | "user";
+  id: string;
+  content: MessageContent[];
+}
 
 export default function TayZondayAssistant() {
-  const [messages, setMessages] = useState([
+  const [messages, setMessages] = useState<Message[]>([
     {
       type: "message",
       role: "assistant",
@@ -19,60 +33,94 @@ export default function TayZondayAssistant() {
   const [isLoading, setIsLoading] = useState(false);
   const responseTextRef = useRef("");
   const responseIdRef = useRef(`msg_${Date.now()}`);
+  const bufferTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const messageBufferRef = useRef("");
 
-  // Function to update message content
-  const updateMessageContent = (text, messageId) => {
-    setMessages(prev => {
-      const newMessages = JSON.parse(JSON.stringify(prev));
-      const index = newMessages.findIndex(
-        (m) => m.type === "message" && m.role === "assistant" && m.id === messageId
-      );
-
-      if (index !== -1) {
-        const assistantMessage = newMessages[index];
-        if (assistantMessage.type === "message") {
-          assistantMessage.content = [{
-            type: "output_text",
-            text: text
-          }];
-        }
+  // Cleanup function for timers
+  useEffect(() => {
+    return () => {
+      if (bufferTimerRef.current) {
+        clearTimeout(bufferTimerRef.current);
       }
+    };
+  }, []);
 
-      return newMessages;
-    });
+  // Function to update message content with rate limiting
+  const updateMessageContent = (text: string, messageId: string) => {
+    messageBufferRef.current = text;
     
-    // Force a scroll check after content update
-    try {
-      setTimeout(() => {
-        const messagesContainer = document.querySelector(".overflow-y-auto");
-        if (messagesContainer) {
-          messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    // If we already have a pending update, let it handle the new content
+    if (bufferTimerRef.current) return;
+    
+    // Set up the update with a small delay
+    bufferTimerRef.current = setTimeout(() => {
+      setMessages(prev => {
+        const newMessages = JSON.parse(JSON.stringify(prev)) as Message[];
+        const index = newMessages.findIndex(
+          (m) => m.type === "message" && m.role === "assistant" && m.id === messageId
+        );
+
+        if (index !== -1) {
+          const assistantMessage = newMessages[index];
+          if (assistantMessage.type === "message") {
+            assistantMessage.content = [{
+              type: "output_text",
+              text: messageBufferRef.current
+            }];
+          }
         }
-      }, 100);
-    } catch (error) {
-      // Ignore scroll errors
-    }
+        return newMessages;
+      });
+      
+      // Reset the timer
+      bufferTimerRef.current = null;
+      
+      // If more content came in while we were updating, schedule another update
+      if (messageBufferRef.current !== text) {
+        updateMessageContent(messageBufferRef.current, messageId);
+      }
+      
+      // Force a scroll check after content update
+      try {
+        setTimeout(() => {
+          const messagesContainer = document.querySelector(".overflow-y-auto");
+          if (messagesContainer) {
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+          }
+        }, 100);
+      } catch (error) {
+        // Ignore scroll errors
+      }
+    }, 50); // Small delay to batch rapid updates
   };
 
-  const handleSendMessage = async (message) => {
+  const handleSendMessage = async (message: string) => {
     if (!message.trim()) return;
 
     // Create a unique ID for this message
     const messageId = `msg_${Date.now()}`;
 
-    const userItem = {
+    const userMessage: Message = {
       type: "message",
       role: "user",
+      id: messageId,
       content: [{ type: "input_text", text: message.trim() }],
     };
 
     try {
       setIsLoading(true);
       // Add user message to the list
-      setMessages(prev => [...prev, userItem]);
+      setMessages(prev => [...prev, userMessage]);
+
+      // Reset the buffer references
+      messageBufferRef.current = "";
+      if (bufferTimerRef.current) {
+        clearTimeout(bufferTimerRef.current);
+        bufferTimerRef.current = null;
+      }
 
       // Create empty assistant message
-      const assistantItem = {
+      const assistantMessage: Message = {
         type: "message",
         role: "assistant",
         id: messageId,
@@ -83,7 +131,7 @@ export default function TayZondayAssistant() {
       };
 
       // Add the empty assistant message
-      setMessages(prev => [...prev, assistantItem]);
+      setMessages(prev => [...prev, assistantMessage]);
 
       // Reset the response text for this new conversation turn
       responseTextRef.current = "";
@@ -111,6 +159,41 @@ export default function TayZondayAssistant() {
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
+      let fullText = "";
+
+      // Helper function to extract delta text from different data structures
+      const extractDeltaText = (parsed: any): string => {
+        if (parsed.choices && parsed.choices[0]?.delta?.content) {
+          return parsed.choices[0].delta.content;
+        }
+        if (parsed.choices && parsed.choices[0]?.text) {
+          return parsed.choices[0].text;
+        }
+        if (parsed.content) {
+          return parsed.content;
+        }
+        return "";
+      };
+
+      // Helper function to attempt to fix malformed JSON
+      const tryParseJSON = (text: string) => {
+        try {
+          return JSON.parse(text);
+        } catch (e) {
+          // Try to fix common JSON issues
+          // 1. If it starts with data: 
+          if (text.startsWith("data: ")) {
+            return tryParseJSON(text.substring(6));
+          }
+          // 2. Check if we need to add closing brackets/braces
+          const fixedText = text
+            .replace(/\n/g, "")
+            .trim();
+            
+          // If all else fails, return null
+          return null;
+        }
+      };
 
       // Process the stream
       while (true) {
@@ -127,10 +210,13 @@ export default function TayZondayAssistant() {
             if (data === "[DONE]") continue;
 
             try {
-              const parsed = JSON.parse(data);
-              if (parsed.choices && parsed.choices[0]?.delta?.content) {
-                responseTextRef.current += parsed.choices[0].delta.content;
-                updateMessageContent(responseTextRef.current, responseIdRef.current);
+              const parsed = tryParseJSON(data);
+              if (parsed) {
+                const deltaText = extractDeltaText(parsed);
+                if (deltaText) {
+                  responseTextRef.current += deltaText;
+                  updateMessageContent(responseTextRef.current, responseIdRef.current);
+                }
               }
             } catch (e) {
               console.error("Error parsing JSON from stream:", e);
@@ -141,9 +227,10 @@ export default function TayZondayAssistant() {
     } catch (error) {
       console.error("Error in handleSendMessage:", error);
       // Add error message
-      const errorItem = {
+      const errorItem: Message = {
         type: "message",
         role: "assistant",
+        id: messageId,
         content: [{ 
           type: "output_text", 
           text: "Sorry, I encountered an error processing your request." 
