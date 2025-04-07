@@ -242,7 +242,7 @@ export default function AddDemoButton({ onDemoAdded }: AddDemoButtonProps) {
       if (activeTab === 'single') {
         // Validate single-assistant form
         if (!demoTitle || !assistantTitle || !promptFile || !contentFile) {
-          const missingFields = [];
+          const missingFields: string[] = [];
           if (!demoTitle) missingFields.push('Demo Title');
           if (!assistantTitle) missingFields.push('Assistant Title');
           if (!promptFile) missingFields.push('Prompt File');
@@ -268,7 +268,7 @@ export default function AddDemoButton({ onDemoAdded }: AddDemoButtonProps) {
       } else {
         // Multi-assistant validation
         if (!demoTitle || !contentFile) {
-          const missingFields = [];
+          const missingFields: string[] = [];
           if (!demoTitle) missingFields.push('Demo Title');
           if (!contentFile) missingFields.push('Content File');
           
