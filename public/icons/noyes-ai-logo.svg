@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="24" viewBox="0 0 120 24" fill="none">
+  <path d="M10 4L20 20H0L10 4Z" fill="#4285F4"/>
+  <path d="M15 4L25 20H5L15 4Z" fill="#0F9D58" fill-opacity="0.8"/>
+  <path d="M5 4L15 20H-5L5 4Z" fill="#DB4437" fill-opacity="0.8"/>
+  <text x="30" y="17" font-family="Arial, sans-serif" font-weight="bold" font-size="14" fill="#333333">Noyes AI</text>
+</svg> 

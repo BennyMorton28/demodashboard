@@ -1,0 +1,21 @@
+{
+  "demoId": "rob-s-big-day",
+  "assistants": [
+    {
+      "id": "0",
+      "name": "Draco",
+      "description": "",
+      "icon": "/icons/rob-s-big-day-assistant-0.svg",
+      "isLocked": false,
+      "password": ""
+    },
+    {
+      "id": "1",
+      "name": "Malfoy",
+      "description": "",
+      "icon": "/icons/rob-s-big-day-assistant-1.svg",
+      "isLocked": true,
+      "password": "grape"
+    }
+  ]
+}
