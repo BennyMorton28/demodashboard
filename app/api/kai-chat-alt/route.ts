@@ -44,7 +44,7 @@ export async function POST(request: Request) {
     
     // Try with different models in sequence if they fail
     const modelsToTry = ["gpt-3.5-turbo", "gpt-3.5-turbo-16k"];
-    let lastError = null;
+    let lastError: Error | null = null;
     
     for (const model of modelsToTry) {
       try {
