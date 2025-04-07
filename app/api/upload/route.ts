@@ -54,6 +54,30 @@ const dataDir = path.join(process.cwd(), 'data');
 const publicDir = path.join(process.cwd(), 'public');
 const markdownBaseDir = path.join(publicDir, 'markdown');
 
+// Define interfaces
+interface DemoInfo {
+  id: string;
+  title?: string;
+  name?: string;
+  description: string;
+  author?: string;
+  category?: string;
+  created?: string;
+  updated?: string;
+  icon?: string;
+  isLocked?: boolean;
+  password?: string;
+}
+
+interface Assistant {
+  id: string;
+  name: string;
+  description?: string;
+  icon?: string;
+  isLocked: boolean;
+  password?: string;
+}
+
 // Helper function to generate the demo-info.json file
 function generateDemoInfo(
   demoId: string, 
@@ -366,19 +390,20 @@ function generateAssistantComponent(demoId: string, assistantTitle: string): str
 
 // Helper to get all demos
 async function getAllDemos() {
+  const demoInfoDir = path.join(process.cwd(), 'data');
+  const demos: DemoInfo[] = [];
+  
   try {
-    const demoInfoDir = path.join(dataDir, 'demo-info');
-    await createDirectorySafely(demoInfoDir);
-    
     const files = await readdir(demoInfoDir);
-    const demoFiles = files.filter(file => file.endsWith('.json'));
     
-    const demos = [];
-    for (const file of demoFiles) {
+    for (const file of files) {
+      if (!file.endsWith('-info.json')) continue;
+      
       const filePath = path.join(demoInfoDir, file);
-      const fileContent = fs.readFileSync(filePath, 'utf8');
+      const fileContent = fs.readFileSync(filePath, 'utf-8');
+      
       try {
-        const demoInfo = JSON.parse(fileContent);
+        const demoInfo = JSON.parse(fileContent) as DemoInfo;
         demos.push(demoInfo);
       } catch (error) {
         logDebug(`Error parsing demo info file: ${filePath}`, error);
@@ -387,7 +412,7 @@ async function getAllDemos() {
     
     return demos;
   } catch (error) {
-    logDebug('Error getting all demos', error);
+    logDebug('Error reading demo info directory', error);
     return [];
   }
 }
@@ -460,7 +485,7 @@ export async function POST(request: NextRequest) {
       }
       
       // Process assistants data
-      const assistants = [];
+      const assistants: Assistant[] = [];
       for (let i = 0; i < assistantsCount; i++) {
         const name = formData.get(`assistant_${i}_name`) as string;
         const promptFile = formData.get(`assistant_${i}_promptFile`) as File;
