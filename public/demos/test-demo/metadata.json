@@ -1,0 +1,8 @@
+{
+  "title": "Test Demo",
+  "description": "A simple test demo for development purposes",
+  "tags": ["test", "development"],
+  "thumbnail": "/demos/test-demo/thumbnail.png",
+  "created": "2023-07-15",
+  "updated": "2023-07-15"
+} 

@@ -234,6 +234,16 @@ export default function AddDemoButton({ onDemoAdded }: AddDemoButtonProps) {
       const demoId = demoTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-');
       logDebug(`Generated demoId from title: ${demoId}`);
       
+      // Add paths to debug info for visibility
+      logDebug(`Expected paths that will be created:`);
+      logDebug(`- app/demos/${demoId}/page.tsx`);
+      logDebug(`- app/demos/${demoId}/create-success/ (directory)`);
+      logDebug(`- components/${demoId}-assistant.tsx`);
+      logDebug(`- lib/prompts/${demoId}-prompt.md`);
+      logDebug(`- public/markdown/${demoId}/ (directory)`);
+      logDebug(`- public/icons/${demoId}.* (icon file)`);
+      logDebug(`- data/demo-info/${demoId}.json (metadata)`);
+      
       // Add basic form fields that are common to both
       formData.append("demoId", demoId);
       formData.append("password", password);
@@ -413,14 +423,19 @@ export default function AddDemoButton({ onDemoAdded }: AddDemoButtonProps) {
         }
         
         // Store the demo ID for navigation
-        const newDemoPath = `/demos/${result.demoId}/create-success?id=${result.demoId}&title=${encodeURIComponent(assistantTitle)}`;
+        const newDemoPath = `/demos/${result.demoId}/create-success?id=${result.demoId}&title=${encodeURIComponent(assistantTitle)}&debug=true`;
         setCreatedDemoPath(newDemoPath);
         logDebug(`Setting navigation path: ${newDemoPath}`);
         
         // Add a delay before redirecting to the success page
-        logDebug(`Redirecting to success page`);
-        router.push(newDemoPath);
-        router.refresh();
+        logDebug(`Redirecting to success page in 3 seconds...`);
+        
+        // Start the countdown for redirection
+        setTimeout(() => {
+          logDebug(`Redirecting to ${newDemoPath}`);
+          router.push(newDemoPath);
+          router.refresh();
+        }, 3000);
         
         return result;
       } catch (fetchError: any) {
@@ -540,8 +555,18 @@ export default function AddDemoButton({ onDemoAdded }: AddDemoButtonProps) {
                   )}
                   <p className="text-gray-600 mb-4">Redirecting you to your new demo in a moment...</p>
                   
+                  {/* Enhanced debugging view - always visible */}
+                  <div className="mt-4 border border-gray-200 rounded-md p-4 bg-gray-50 text-left">
+                    <div className="flex justify-between items-center mb-2">
+                      <h3 className="font-semibold">Creation Debug Log</h3>
+                    </div>
+                    <div className="bg-white p-2 rounded border border-gray-300 max-h-60 overflow-y-auto text-xs font-mono whitespace-pre-wrap">
+                      {debugInfo || "No debug information available"}
+                    </div>
+                  </div>
+                  
                   {/* Fallback link in case auto-redirect doesn't work */}
-                  <div className="mt-2">
+                  <div className="mt-4">
                     <p className="text-sm text-gray-500">If you're not redirected automatically:</p>
                     <Link 
                       href={createdDemoPath} 

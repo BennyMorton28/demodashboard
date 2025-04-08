@@ -160,6 +160,9 @@ const Message: React.FC<MessageProps> = ({ message }) => {
   };
 
   useEffect(() => {
+    // Always ensure isReady is true to display content
+    setIsReady(true);
+
     if (!messageText) {
       setDisplayedText("");
       return;
@@ -170,64 +173,16 @@ const Message: React.FC<MessageProps> = ({ message }) => {
       clearTimeout(timeoutRef.current);
     }
 
-    // For user messages or previously displayed messages, show immediately
-    if (message.role === "user" || hasBeenDisplayedBefore()) {
-      setDisplayedText(messageText);
-      setIsThinking(false);
-      if (message.role !== "user") {
-        markAsDisplayed();
-      }
-      return;
+    // Immediately display the text without animation for all messages
+    // This ensures streaming content appears immediately
+    setDisplayedText(messageText);
+    setIsThinking(false);
+    
+    // Still mark as displayed for future reference
+    if (message.role !== "user") {
+      markAsDisplayed();
     }
     
-    // If we already have partial message content (not empty), don't reset it to avoid flickering
-    const currentDisplayedLength = displayedText.length;
-    const shouldReset = currentDisplayedLength === 0;
-    
-    // Only reset state if we're starting from scratch
-    if (shouldReset) {
-      setDisplayedText("");
-      setIsReady(true);
-      setIsThinking(true);
-    } else {
-      // If we already have content, continue with it
-      setIsThinking(false);
-    }
-    
-    isTypingRef.current = true;
-
-    // Start typing animation after a brief delay
-    const startTyping = () => {
-      setIsThinking(false);
-      
-      // If we already have content and it's the same as the message text, don't retype
-      if (displayedText === messageText) {
-        isTypingRef.current = false;
-        markAsDisplayed();
-        return;
-      }
-      
-      // For continued streaming, start from the current position rather than the beginning
-      let visibleIndex = shouldReset ? 0 : currentDisplayedLength;
-      
-      const animateText = () => {
-        if (visibleIndex < messageText.length) {
-          setDisplayedText(messageText.slice(0, visibleIndex + 1));
-          visibleIndex += 8; // Increase typing speed by processing more characters at once
-          timeoutRef.current = setTimeout(animateText, 0);
-        } else {
-          isTypingRef.current = false;
-          markAsDisplayed();
-        }
-      };
-
-      // Start the animation immediately
-      animateText();
-    };
-
-    // Brief initial delay only if starting from scratch
-    timeoutRef.current = setTimeout(startTyping, shouldReset ? 100 : 0);
-
     return () => {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
@@ -401,16 +356,15 @@ const Message: React.FC<MessageProps> = ({ message }) => {
       <div className="flex">
         <div className="mr-4 rounded-[16px] px-4 py-2 md:mr-24 text-black bg-white font-sans max-w-full">
           <div className="break-words overflow-visible pb-1">
-            {isReady && (
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm, remarkMath]}
-                rehypePlugins={[rehypeKatex]}
-                components={MarkdownComponents}
-                className="prose max-w-none overflow-hidden"
-              >
-                {prepareMarkdownText(displayedText)}
-              </ReactMarkdown>
-            )}
+            {/* Always render content regardless of isReady state */}
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm, remarkMath]}
+              rehypePlugins={[rehypeKatex]}
+              components={MarkdownComponents}
+              className="prose max-w-none overflow-hidden"
+            >
+              {prepareMarkdownText(displayedText)}
+            </ReactMarkdown>
           </div>
         </div>
       </div>

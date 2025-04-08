@@ -3,6 +3,7 @@ import { writeFile, mkdir, readdir } from 'fs/promises';
 import path from 'path';
 import { existsSync } from 'fs';
 import fs from 'fs';
+import { demoLogger, validateDemoCreation } from '@/lib/debug-utils';
 
 // Enhanced logging helper
 function logDebug(message: string, data?: any): void {
@@ -44,6 +45,46 @@ async function createDirectorySafely(dirPath: string): Promise<void> {
   } catch (error) {
     logDebug(`Error creating directory: ${dirPath}`, error);
     throw error;
+  }
+}
+
+// Helper function to ensure a file is written to both regular and standalone locations
+async function writeToAllLocations(filePath: string, content: string | Buffer): Promise<void> {
+  // Write to the primary location
+  await writeFile(filePath, content);
+  logDebug(`File saved to ${filePath}`);
+  
+  // If we're in the source directory, also write to the standalone location
+  const baseDir = process.cwd();
+  if (!baseDir.includes('.next/standalone') && !baseDir.endsWith('standalone')) {
+    // Convert this path to its standalone equivalent
+    const relativePath = path.relative(baseDir, filePath);
+    const standalonePath = path.join(baseDir, '.next', 'standalone', relativePath);
+    
+    // Ensure the directory exists
+    await createDirectorySafely(path.dirname(standalonePath));
+    
+    // Write the file
+    await writeFile(standalonePath, content);
+    logDebug(`File also saved to standalone location: ${standalonePath}`);
+  }
+}
+
+// Helper function to ensure a directory is created in both regular and standalone locations
+async function createDirectoryInAllLocations(dirPath: string): Promise<void> {
+  // Create in primary location
+  await createDirectorySafely(dirPath);
+  
+  // If we're in the source directory, also create in the standalone location
+  const baseDir = process.cwd();
+  if (!baseDir.includes('.next/standalone') && !baseDir.endsWith('standalone')) {
+    // Convert this path to its standalone equivalent
+    const relativePath = path.relative(baseDir, dirPath);
+    const standalonePath = path.join(baseDir, '.next', 'standalone', relativePath);
+    
+    // Create the directory
+    await createDirectorySafely(standalonePath);
+    logDebug(`Directory also created in standalone location: ${standalonePath}`);
   }
 }
 
@@ -429,17 +470,24 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    // Ensure directories exist
-    await createDirectorySafely(contentDir);
-    await createDirectorySafely(promptsDir);
-    await createDirectorySafely(dataDir);
-    await createDirectorySafely(path.join(dataDir, 'demo-info'));
-    await createDirectorySafely(markdownBaseDir);
-    await createDirectorySafely(path.join(process.cwd(), 'public', 'icons'));
-    await createDirectorySafely(path.join(process.cwd(), 'app', 'demos'));
+    // Ensure directories exist in both locations
+    await createDirectoryInAllLocations(contentDir);
+    await createDirectoryInAllLocations(promptsDir);
+    await createDirectoryInAllLocations(dataDir);
+    await createDirectoryInAllLocations(path.join(dataDir, 'demo-info'));
+    await createDirectoryInAllLocations(markdownBaseDir);
+    await createDirectoryInAllLocations(path.join(process.cwd(), 'public', 'icons'));
+    await createDirectoryInAllLocations(path.join(process.cwd(), 'app', 'demos'));
 
     // Get form data
     const formData = await request.formData();
+    
+    // Start logger
+    demoLogger.info(`Demo upload started`, {
+      isMultiAssistant: formData.get('isMultiAssistant') === 'true', 
+      demoId: formData.get('demoId') as string,
+      contentFile: formData.get('contentFile') ? (formData.get('contentFile') as File).name : null,
+    });
     
     // Extract fields
     const demoId = formData.get('demoId') as string;
@@ -474,7 +522,7 @@ export async function POST(request: NextRequest) {
       try {
         const contentPath = path.join(markdownDir, "content.md");
         const contentBuffer = Buffer.from(await contentFile.arrayBuffer());
-        await writeFile(contentPath, contentBuffer);
+        await writeToAllLocations(contentPath, contentBuffer);
         logDebug(`Content file saved to ${contentPath}`);
       } catch (error) {
         logDebug('Error saving content file', error);
@@ -498,7 +546,7 @@ export async function POST(request: NextRequest) {
         try {
           const promptPath = path.join(promptsDir, `${demoId}-assistant-${i}-prompt.md`);
           const promptBuffer = Buffer.from(await promptFile.arrayBuffer());
-          await writeFile(promptPath, promptBuffer);
+          await writeToAllLocations(promptPath, promptBuffer);
           logDebug(`Prompt file for assistant ${i} saved to ${promptPath}`);
         } catch (error) {
           logDebug(`Error saving prompt file for assistant ${i}`, error);
@@ -526,7 +574,7 @@ export async function POST(request: NextRequest) {
             // Save the file
             const fullIconPath = path.join(iconDir, iconFilename);
             const iconBuffer = Buffer.from(await iconFile.arrayBuffer());
-            await writeFile(fullIconPath, iconBuffer);
+            await writeToAllLocations(fullIconPath, iconBuffer);
             logDebug(`Icon for assistant ${i} saved to ${fullIconPath}`);
           } catch (error) {
             logDebug(`Error saving icon for assistant ${i}`, error);
@@ -563,7 +611,7 @@ export async function POST(request: NextRequest) {
             iconPath = `/icons/${iconFilename}`; // Store the path for later use
             
             const fullIconPath = path.join(iconDir, iconFilename);
-            await writeFile(fullIconPath, svgContent);
+            await writeToAllLocations(fullIconPath, svgContent);
             logDebug(`Default icon created for assistant ${i} at ${fullIconPath}`);
           } catch (error) {
             logDebug(`Error creating default icon for assistant ${i}`, error);
@@ -593,7 +641,7 @@ export async function POST(request: NextRequest) {
         await createDirectorySafely(configDir);
         
         const configPath = path.join(configDir, `${demoId}.json`);
-        await writeFile(configPath, JSON.stringify(assistantsConfig, null, 2));
+        await writeToAllLocations(configPath, JSON.stringify(assistantsConfig, null, 2));
         logDebug(`Assistants configuration saved to ${configPath}`);
       } catch (error) {
         logDebug('Error saving assistants configuration', error);
@@ -615,7 +663,7 @@ export async function POST(request: NextRequest) {
           updated: new Date().toISOString(),
         };
         
-        await writeFile(demoInfoPath, JSON.stringify(demoInfo, null, 2));
+        await writeToAllLocations(demoInfoPath, JSON.stringify(demoInfo, null, 2));
         logDebug(`Demo info saved to ${demoInfoPath}`);
       } catch (error) {
         logDebug('Error saving demo info', error);
@@ -773,11 +821,25 @@ export default function ${componentName}Demo() {
 }`;
         
         const pagePath = path.join(demoPageDir, 'page.tsx');
-        await writeFile(pagePath, pageContent);
+        await writeToAllLocations(pagePath, pageContent);
         logDebug(`Multi-assistant demo page created at ${pagePath}`);
+        
+        // Also create the create-success directory and ensure it exists
+        const successDir = path.join(demoPageDir, 'create-success');
+        await createDirectorySafely(successDir);
+        
+        // We don't need to create the page.tsx in success dir as it's a global component
+        logDebug(`Success directory created at ${successDir}`);
       } catch (error) {
         logDebug('Error creating multi-assistant demo page', error);
-        // Don't fail the whole process if page creation fails
+        // Create a more detailed error message
+        let errorDetails = 'Unknown error';
+        if (error instanceof Error) {
+          errorDetails = `${error.name}: ${error.message}\nStack: ${error.stack}`;
+        }
+        logDebug(`Detailed error information: ${errorDetails}`);
+        
+        // Don't fail the whole process, but log the error extensively
       }
       
       // Process icon file for the demo card
@@ -797,7 +859,7 @@ export default function ${componentName}Demo() {
           const iconPath = path.join(iconDir, iconFilename);
           
           const iconBuffer = Buffer.from(await iconFile.arrayBuffer());
-          await writeFile(iconPath, iconBuffer);
+          await writeToAllLocations(iconPath, iconBuffer);
           logDebug(`Demo icon saved to ${iconPath} (extension: ${normalizedExt})`);
         } catch (error) {
           logDebug('Error saving demo icon', error);
@@ -835,12 +897,24 @@ export default function ${componentName}Demo() {
           </svg>`;
           
           const iconPath = path.join(iconDir, `${demoId}.svg`);
-          await writeFile(iconPath, svgContent);
+          await writeToAllLocations(iconPath, svgContent);
           logDebug(`Default demo icon created at ${iconPath}`);
         } catch (error) {
           logDebug('Error creating default demo icon', error);
           // Continue with the process even if icon creation fails
         }
+      }
+      
+      // Validate the created demo to ensure all files exist
+      try {
+        const validationResult = await validateDemoCreation(demoId);
+        demoLogger.info(`Demo validation results for ${demoId}:`, validationResult);
+        
+        if (!validationResult.success) {
+          demoLogger.warn(`Demo validation failed for ${demoId} - some required files may be missing`, validationResult.details);
+        }
+      } catch (error) {
+        demoLogger.error(`Error validating demo creation for ${demoId}`, error);
       }
       
       // Return success response
@@ -891,7 +965,7 @@ export default function ${componentName}Demo() {
       try {
         const promptPath = path.join(promptsDir, `${demoId}-prompt.md`);
         const promptBuffer = Buffer.from(await promptFile.arrayBuffer());
-        await writeFile(promptPath, promptBuffer);
+        await writeToAllLocations(promptPath, promptBuffer);
         logDebug(`Prompt file saved to ${promptPath}`);
       } catch (error) {
         logDebug('Error saving prompt file', error);
@@ -906,7 +980,7 @@ export default function ${componentName}Demo() {
         try {
           const contentPath = path.join(markdownDir, "content.md");
           const contentBuffer = Buffer.from(await contentFile.arrayBuffer());
-          await writeFile(contentPath, contentBuffer);
+          await writeToAllLocations(contentPath, contentBuffer);
           logDebug(`Content file saved to ${contentPath}`);
         } catch (error) {
           logDebug('Error saving content file', error);
@@ -921,7 +995,7 @@ export default function ${componentName}Demo() {
       try {
         const demoInfoPath = path.join(dataDir, 'demo-info', `${demoId}.json`);
         const demoInfo = generateDemoInfo(demoId, assistantTitle, description, author, category);
-        await writeFile(demoInfoPath, demoInfo);
+        await writeToAllLocations(demoInfoPath, demoInfo);
         logDebug(`Demo info saved to ${demoInfoPath}`);
       } catch (error) {
         logDebug('Error saving demo info', error);
@@ -938,7 +1012,7 @@ export default function ${componentName}Demo() {
         
         const componentPath = path.join(componentDir, `${demoId}-assistant.tsx`);
         const componentContent = generateAssistantComponent(demoId, assistantTitle);
-        await writeFile(componentPath, componentContent);
+        await writeToAllLocations(componentPath, componentContent);
         logDebug(`Assistant component saved to ${componentPath}`);
       } catch (error) {
         logDebug('Error saving assistant component', error);
@@ -965,7 +1039,7 @@ export default function ${componentName}Demo() {
           const iconPath = path.join(iconDir, iconFilename);
           
           const iconBuffer = Buffer.from(await iconFile.arrayBuffer());
-          await writeFile(iconPath, iconBuffer);
+          await writeToAllLocations(iconPath, iconBuffer);
           logDebug(`Icon file saved to ${iconPath} (extension: ${normalizedExt})`);
         } catch (error) {
           logDebug('Error saving icon file', error);
@@ -1004,7 +1078,7 @@ export default function ${componentName}Demo() {
           </svg>`;
           
           const iconPath = path.join(iconDir, `${demoId}.svg`);
-          await writeFile(iconPath, svgContent);
+          await writeToAllLocations(iconPath, svgContent);
           logDebug(`Default icon created at ${iconPath}`);
         } catch (error) {
           logDebug('Error creating default icon', error);
@@ -1017,6 +1091,7 @@ export default function ${componentName}Demo() {
         const demoPageDir = path.join(process.cwd(), 'app', 'demos', demoId);
         await createDirectorySafely(demoPageDir);
         
+        // Create the page.tsx file
         const componentName = demoId.split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('');
         const pageContent = `"use client";
 
@@ -1059,11 +1134,37 @@ export default function ${componentName}Demo() {
 }`;
         
         const pagePath = path.join(demoPageDir, 'page.tsx');
-        await writeFile(pagePath, pageContent);
+        await writeToAllLocations(pagePath, pageContent);
         logDebug(`Demo page created at ${pagePath}`);
+        
+        // Also create the create-success directory and ensure it exists
+        const successDir = path.join(demoPageDir, 'create-success');
+        await createDirectorySafely(successDir);
+        
+        // We don't need to create the page.tsx in success dir as it's a global component
+        logDebug(`Success directory created at ${successDir}`);
       } catch (error) {
         logDebug('Error creating demo page', error);
-        // Don't fail the whole process if page creation fails
+        // Create a more detailed error message
+        let errorDetails = 'Unknown error';
+        if (error instanceof Error) {
+          errorDetails = `${error.name}: ${error.message}\nStack: ${error.stack}`;
+        }
+        logDebug(`Detailed error information: ${errorDetails}`);
+        
+        // Don't fail the whole process, but log the error extensively
+      }
+      
+      // Validate the created demo to ensure all files exist
+      try {
+        const validationResult = await validateDemoCreation(demoId);
+        demoLogger.info(`Demo validation results for ${demoId}:`, validationResult);
+        
+        if (!validationResult.success) {
+          demoLogger.warn(`Demo validation failed for ${demoId} - some required files may be missing`, validationResult.details);
+        }
+      } catch (error) {
+        demoLogger.error(`Error validating demo creation for ${demoId}`, error);
       }
       
       return NextResponse.json({ 
@@ -1073,7 +1174,7 @@ export default function ${componentName}Demo() {
       });
     }
   } catch (error) {
-    logDebug('Error in POST /api/upload', error);
+    demoLogger.error(`Error in POST /api/upload`, error);
     return NextResponse.json(
       { error: 'Internal Server Error' },
       { status: 500 }

@@ -1,0 +1,10 @@
+[2025-04-08T19:27:57.111Z][TEST:demo-creation] Starting demo creation process for test-demo-m98w7h69
+[2025-04-08T19:27:57.111Z][TEST:demo-creation] Creating directory structure
+[2025-04-08T19:27:57.111Z][TEST:demo-creation] Saving demo files to filesystem
+[2025-04-08T19:27:57.111Z][TEST:demo-creation] Demo ID: test-demo-m98w7h69, Title: Test Demo
+[2025-04-08T19:27:57.111Z][TEST:demo-creation] Demo creation completed: test-demo-m98w7h69
+[2025-04-08T19:27:57.124Z][TEST:demo-creation] Starting demo creation process for incomplete-demo-m98w7h6f
+[2025-04-08T19:27:57.124Z][TEST:demo-creation] Creating directory structure
+[2025-04-08T19:27:57.124Z][ERROR:demo-creation] Error saving prompt file: ENOENT: no such file or directory
+[2025-04-08T19:27:57.124Z][ERROR:demo-creation] Error creating demo page: Cannot create page component
+[2025-04-08T19:27:57.124Z][TEST:demo-creation] Demo creation partially completed with errors: incomplete-demo-m98w7h6f

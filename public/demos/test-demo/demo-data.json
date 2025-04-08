@@ -1,0 +1,8 @@
+{
+  "title": "Test Demo",
+  "description": "This is a test demo for testing the API",
+  "image": "/demos/test-demo/demo-image.png",
+  "demoPath": "/demos/test-demo",
+  "tags": ["test", "demo"],
+  "published": true
+}

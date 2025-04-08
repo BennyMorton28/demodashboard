@@ -27,21 +27,49 @@ const Chat: React.FC<ChatProps> = ({ items, messages, onSendMessage, isLoading =
 
   // Check if we should show the loading dots (only when there's an empty assistant message)
   const shouldShowLoadingDots = useCallback(() => {
-    if (!isLoading) return false;
-    if (chatItems.length === 0) return true;
+    console.log("shouldShowLoadingDots check:");
+    console.log("- isLoading:", isLoading);
+    console.log("- chatItems length:", chatItems.length);
+    
+    if (!isLoading) {
+      console.log("→ Not showing dots: isLoading is false");
+      return false;
+    }
+    
+    if (chatItems.length === 0) {
+      console.log("→ Showing dots: no items yet");
+      return true;
+    }
     
     // Get the last message
     const lastItem = chatItems[chatItems.length - 1];
+    console.log("- Last item role:", lastItem.type === "message" ? lastItem.role : "N/A (not a message)");
+    console.log("- Last item type:", lastItem.type);
     
-    // Only show dots if the last message is from assistant and has no content yet
-    return (
-      lastItem.type === "message" && 
-      lastItem.role === "assistant" && 
-      (!lastItem.content || 
-       !lastItem.content[0] || 
-       !lastItem.content[0].text || 
-       lastItem.content[0].text.trim() === "")
-    );
+    if (lastItem.type === "message" && 'content' in lastItem && lastItem.content) {
+      const content = lastItem.content[0];
+      if (content && content.text) {
+        console.log(`- Last item text: "${content.text.substring(0, 50)}${content.text.length > 50 ? '...' : ''}"`);
+        
+        // If there is text content in the last message from the assistant, don't show the dots
+        if (lastItem.role === "assistant" && content.text.trim() !== "") {
+          console.log("→ Not showing dots: assistant message has text content");
+          return false;
+        }
+      } else {
+        console.log("- Last item text: none or empty");
+      }
+    }
+    
+    // Only return false if the last message is from the user
+    if (lastItem.type === "message" && 'role' in lastItem && lastItem.role === "user") {
+      console.log("→ Not showing dots: last message is from user");
+      return false;
+    }
+    
+    // In all other cases, if isLoading is true, we should show the dots
+    console.log("→ Showing dots: isLoading is true and last message needs dots");
+    return true;
   }, [isLoading, chatItems]);
 
   const scrollToBottom = useCallback(() => {
@@ -159,21 +187,21 @@ const Chat: React.FC<ChatProps> = ({ items, messages, onSendMessage, isLoading =
           ))}
           
           {shouldShowLoadingDots() && (
-            <div className="flex justify-start px-4 py-2">
-              <div className="flex space-x-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-black animate-bounce" 
+            <div className="flex justify-start px-4 py-2 mb-2">
+              <div className="flex items-center space-x-2 bg-white rounded-lg px-4 py-2 shadow-sm">
+                <div className="w-1.5 h-1.5 rounded-full bg-gray-500 animate-bounce" 
                      style={{ 
                        animationDelay: '0ms',
                        animationDuration: '0.7s'
                      }}>
                 </div>
-                <div className="w-1.5 h-1.5 rounded-full bg-black animate-bounce" 
+                <div className="w-1.5 h-1.5 rounded-full bg-gray-500 animate-bounce" 
                      style={{ 
                        animationDelay: '120ms',
                        animationDuration: '0.7s'
                      }}>
                 </div>
-                <div className="w-1.5 h-1.5 rounded-full bg-black animate-bounce" 
+                <div className="w-1.5 h-1.5 rounded-full bg-gray-500 animate-bounce" 
                      style={{ 
                        animationDelay: '240ms',
                        animationDuration: '0.7s'

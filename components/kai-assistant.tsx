@@ -22,7 +22,7 @@ export default function KaiAssistant() {
   const responseIdRef = useRef(`msg_${Date.now()}`);
   const [debugInfo, setDebugInfo] = useState('');
   const [apiKeyStatus, setApiKeyStatus] = useState<{status: string, details?: any} | null>(null);
-  const [showDebug, setShowDebug] = useState(false);
+  const [showDebug, setShowDebug] = useState(true);
   
   // Add a buffer and timer for smoothing out state updates
   const bufferTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -30,23 +30,21 @@ export default function KaiAssistant() {
   const UPDATE_INTERVAL_MS = 50; // Update UI at most every 50ms
 
   // Add a buffer size threshold before showing any text
-  const INITIAL_BUFFER_SIZE = 5; // Reduced from 20 to 5 characters for faster initial display
+  const INITIAL_BUFFER_SIZE = 1; // Reduced to just 1 character for immediate display
   const hasStartedStreamingRef = useRef(false);
 
   // Function to update message content with rate limiting
-  const updateMessageContent = (text: string, messageId: string) => {
+  const updateMessageContent = (text: string, messageId: string, isStreaming: boolean) => {
     const now = Date.now();
     
-    // Don't display text until we have enough content to buffer
-    if (!hasStartedStreamingRef.current && text.length < INITIAL_BUFFER_SIZE) {
-      console.log(`Buffering initial text: ${text.length} chars (waiting for ${INITIAL_BUFFER_SIZE})`);
-      return; // Don't update the UI yet
-    }
-    
-    // Once we have enough text, mark as started so future updates happen immediately
-    if (!hasStartedStreamingRef.current && text.length >= INITIAL_BUFFER_SIZE) {
-      console.log(`Buffer threshold reached (${text.length} chars), starting to display text`);
+    // Don't buffer - display immediately even with just 1 character
+    if (!hasStartedStreamingRef.current) {
+      console.log(`Starting display with ${text.length} chars`);
       hasStartedStreamingRef.current = true;
+      
+      // Force an immediate update for the first character
+      updateMessageState(text, messageId);
+      return;
     }
     
     // Rate limiting logic for UI updates
@@ -60,8 +58,6 @@ export default function KaiAssistant() {
       bufferTimeoutRef.current = setTimeout(() => {
         lastUpdateTimeRef.current = Date.now();
         bufferTimeoutRef.current = null;
-        
-        // Do the actual update
         updateMessageState(text, messageId);
       }, UPDATE_INTERVAL_MS);
     } else {
@@ -88,6 +84,29 @@ export default function KaiAssistant() {
             text: text
           }];
         }
+      } else {
+        // If we can't find the message, try to find the last assistant message
+        const lastAssistantIndex = newMessages.findLastIndex(
+          (m: any) => m.type === 'message' && m.role === 'assistant'
+        );
+        
+        if (lastAssistantIndex !== -1) {
+          const assistantMessage = newMessages[lastAssistantIndex];
+          if (assistantMessage.type === 'message') {
+            assistantMessage.content = [{
+              type: 'output_text',
+              text: text
+            }];
+          }
+        } else {
+          // If we can't find any assistant message, force add one
+          newMessages.push({
+            id: messageId,
+            role: 'assistant' as const,
+            type: 'message' as const,
+            content: [{ type: 'output_text' as const, text: text }]
+          });
+        }
       }
       
       return newMessages;
@@ -103,19 +122,24 @@ export default function KaiAssistant() {
     };
   }, []);
 
+  // Function to add to debug log
+  const addDebugInfo = (info: string) => {
+    console.log(info);
+    setDebugInfo(prev => prev + "\n" + info);
+  };
+
   // Helper function to extract delta text from different possible structures
   const extractDeltaText = (parsedData: any): string => {
-    // Basic structure debug (less verbose)
-    if (process.env.NODE_ENV === 'development') {
-      console.log("Event type:", parsedData.event || "unknown");
-    }
-    
     let deltaText = '';
     
     try {
-      // Check for simplified delta format from our API update
+      // Log the structure of parsedData to help debugging
+      addDebugInfo(`Parsing data: ${JSON.stringify(parsedData).substring(0, 100)}...`);
+      
+      // Check for simplified delta format 
       if (parsedData.event === 'response.output_text.delta' && parsedData.data?.delta) {
         deltaText = parsedData.data.delta;
+        addDebugInfo(`Extracted delta (format 1): "${deltaText}"`);
         return deltaText;
       }
       
@@ -126,51 +150,35 @@ export default function KaiAssistant() {
         parsedData.data?.delta
       ) {
         deltaText = parsedData.data.delta;
+        addDebugInfo(`Extracted delta (format 2): "${deltaText}"`);
         return deltaText;
       }
       
       // Handle OpenAI's chat completions format
       if (parsedData.choices && parsedData.choices[0]?.delta?.content) {
         deltaText = parsedData.choices[0].delta.content;
+        addDebugInfo(`Extracted delta (OpenAI format): "${deltaText}"`);
         return deltaText;
-      }
-      
-      // Final fallback to deep search for complex structures
-      const findDelta = (obj: any): string | null => {
-        if (!obj || typeof obj !== 'object') return null;
-        
-        if (obj.delta) {
-          return typeof obj.delta === 'string' ? obj.delta : 
-                 obj.delta.value ? obj.delta.value : null;
-        }
-        
-        for (const key in obj) {
-          if (typeof obj[key] === 'object') {
-            const found = findDelta(obj[key]);
-            if (found) return found;
-          }
-        }
-        
-        return null;
-      };
-      
-      if (!deltaText) {
-        const foundDelta = findDelta(parsedData);
-        if (foundDelta) {
-          deltaText = foundDelta;
-          return deltaText;
-        }
       }
       
       // Check for error message
       if (parsedData.event === 'error' && parsedData.data?.message) {
         deltaText = `[Error: ${parsedData.data.message}]`;
+        addDebugInfo(`Got error message: ${parsedData.data.message}`);
         return deltaText;
       }
       
+      // Direct content
+      if (parsedData.content) {
+        deltaText = parsedData.content;
+        addDebugInfo(`Extracted direct content: "${deltaText}"`);
+        return deltaText;
+      }
+      
+      addDebugInfo(`No delta found in data structure`);
       return '';
     } catch (error) {
-      console.error("Error extracting delta text:", error);
+      addDebugInfo(`Error extracting delta: ${error}`);
       return '';
     }
   };
@@ -232,11 +240,13 @@ export default function KaiAssistant() {
   const handleSendMessage = async (message: string, apiEndpoint = '/api/kai-chat') => {
     if (!message.trim()) return;
     
-    console.log("Sending message to Kai:", message);
-    setDebugInfo('Sending message...');
-
+    // Clear previous debug info for a new message
+    setDebugInfo("");
+    addDebugInfo(`Sending message: ${message}`);
+    
     // Create a unique ID for this message
     const messageId = `msg_${Date.now()}`;
+    addDebugInfo(`Created message ID: ${messageId}`);
 
     const userItem: Item = {
       type: "message",
@@ -246,206 +256,263 @@ export default function KaiAssistant() {
 
     try {
       setIsLoading(true);
+      
       // Reset streaming flag for new message
       hasStartedStreamingRef.current = false;
       
       // Add user message to the list
       setMessages(prev => [...prev, userItem]);
       
-      // First add a temporary "thinking" indicator
+      // First add a temporary assistant message
       const tempResponseId = uuidv4();
       responseIdRef.current = tempResponseId;
       responseTextRef.current = '';
-      hasStartedStreamingRef.current = false; // Reset streaming state
       
-      setMessages(prev => [
-        ...prev,
-        { 
-          id: tempResponseId, 
-          role: 'assistant', 
-          type: 'message',
-          content: [{ type: 'output_text', text: '...' }] 
-        }
-      ]);
-      
-      // Reset debug info
-      setDebugInfo('');
-      
-      try {
-        // Create our API fetch params
-        const messagesToSend = [
-          ...messages.filter(m => m.type === 'message').map(m => ({
-            role: m.role,
-            content: m.content[0]?.text || ''
-          })),
-          { role: 'user', content: message.trim() }
+      setMessages(prev => {
+        const newMessages = [
+          ...prev,
+          { 
+            id: tempResponseId, 
+            role: 'assistant' as const, 
+            type: 'message' as const,
+            content: [{ type: 'output_text' as const, text: '' }] 
+          }
         ];
+        return newMessages;
+      });
+      
+      // Create our API fetch params
+      const messagesToSend = [
+        ...messages.filter(m => m.type === 'message').map(m => ({
+          role: m.role,
+          content: m.content[0]?.text || ''
+        })),
+        { role: 'user', content: message.trim() }
+      ];
+      
+      const requestBody = JSON.stringify({
+        messages: messagesToSend
+      });
+      
+      // Clean up any existing EventSource before creating a new one
+      let eventSource: EventSource | null = null;
+      let connectionTimeout: NodeJS.Timeout | null = null;
+      let connectionClosed = false;
+      
+      // Function to clean up resources
+      const cleanup = () => {
+        if (connectionTimeout) {
+          clearTimeout(connectionTimeout);
+          connectionTimeout = null;
+        }
         
-        const requestBody = JSON.stringify({
-          messages: messagesToSend
-        });
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
         
-        // Create the event source with retries and better timeout handling
-        const eventSource = new EventSource(`/api/kai-chat?init=${encodeURIComponent(requestBody)}`);
-        setDebugInfo(prev => prev + '\nConnected to event stream');
-        console.log("Connected to event stream");
+        connectionClosed = true;
+        setIsLoading(false);
+      };
+      
+      // Create the event source with query parameters for GET request
+      try {
+        const url = new URL(apiEndpoint, window.location.origin);
+        url.searchParams.append('init', encodeURIComponent(requestBody));
+        
+        eventSource = new EventSource(url.toString());
         
         // Set up a connection timeout to avoid hanging connections
-        const connectionTimeout = setTimeout(() => {
+        connectionTimeout = setTimeout(() => {
           console.error("Connection timed out after 15 seconds");
-          eventSource.close();
-          setIsLoading(false);
           
           // Update the message to show the timeout error
-          setMessages(prev => {
-            const newMessages = JSON.parse(JSON.stringify(prev));
-            const index = newMessages.findIndex(
-              (m: any) => m.type === 'message' && m.role === 'assistant' && m.id === responseIdRef.current
-            );
-            
-            if (index !== -1) {
-              const assistantMessage = newMessages[index];
-              if (assistantMessage.type === 'message') {
-                assistantMessage.content = [{
-                  type: 'output_text',
-                  text: responseTextRef.current || 'Connection timed out. Please try again.'
-                }];
-              }
-            }
-            
-            return newMessages;
-          });
+          const timeoutText = responseTextRef.current || 'Connection timed out. Please try again.';
+          updateMessageContent(timeoutText, responseIdRef.current, false);
+          cleanup();
         }, 15000); // 15 second timeout
         
         // Handle connection opened
-        eventSource.onopen = () => {
-          console.log("SSE connection opened");
-          setIsLoading(true);
+        eventSource.onopen = (event) => {
+          // Clear timeout and set a new longer one
+          if (connectionTimeout) {
+            clearTimeout(connectionTimeout);
+          }
+          
+          connectionTimeout = setTimeout(() => {
+            // Close connection after 2 minutes to prevent resource leaks
+            cleanup();
+          }, 120000); // 2 minute max streaming time
         };
         
         // Handle events received
         eventSource.onmessage = (event) => {
-          // Clear the timeout since we're getting data
-          clearTimeout(connectionTimeout);
+          if (connectionClosed) {
+            return; // Skip processing if we've already closed
+          }
           
           const chunk = event.data;
+          console.log("Received raw chunk:", chunk);
           
-          // Process chunk more carefully, in case it's split across multiple 'data:' lines
+          // Handle end of stream
+          if (chunk.trim() === '[DONE]') {
+            cleanup();
+            return;
+          }
+          
+          // For SSE format, data is already properly formatted and doesn't need data: prefix removal
           try {
-            // Handle end of stream
-            if (chunk.trim() === '[DONE]') {
-              console.log("Received [DONE] event");
-              setDebugInfo(prev => prev + '\nReceived [DONE] event');
-              eventSource.close();
-              setIsLoading(false);
-              return;
+            // Directly parse the chunk as JSON
+            const parsedData = JSON.parse(chunk);
+            processEventData(parsedData);
+          } catch (parseError) {
+            console.error("Error parsing event data:", parseError);
+            
+            // Fallback for handling any malformed JSON or non-JSON content
+            if (chunk && typeof chunk === 'string' && chunk.length > 0) {
+              // If it looks like it might be JSON but has an error, try to fix it
+              if (chunk.includes('"event"') || chunk.includes('"data"')) {
+                try {
+                  // Try using our more flexible JSON parser
+                  const parsedData = attemptJSONFix(chunk);
+                  processEventData(parsedData);
+                  return;
+                } catch (fixError) {
+                  console.error("Failed to fix JSON:", fixError);
+                }
+              }
+              
+              // Last resort: use the raw content
+              console.log("Using raw chunk as content:", chunk);
+              responseTextRef.current += chunk;
+              updateMessageContent(responseTextRef.current, responseIdRef.current, false);
+            }
+          }
+        };
+        
+        // Process parsed event data
+        const processEventData = (parsedData: any) => {
+          console.log("Processing event data:", parsedData);
+          
+          // Handle text events - check for the specific event type we expect
+          if (parsedData.event === 'response.output_text.delta') {
+            // Extract the delta text from our simplified format
+            const textDelta = parsedData.data?.delta || '';
+            
+            if (textDelta) {
+              // Update response text
+              responseTextRef.current += textDelta;
+              
+              // Update UI with the new text
+              updateMessageContent(responseTextRef.current, responseIdRef.current, false);
+            }
+          } else if (parsedData.event === 'error') {
+            // Handle detailed error events from server
+            const errorMsg = parsedData.data?.message || "Unknown error";
+            const errorCode = parsedData.data?.code || 500;
+            const errorType = parsedData.data?.type || "api_error";
+            
+            console.error(`Error from server: ${errorType} (${errorCode}): ${errorMsg}`);
+            addDebugInfo(`Error details: ${errorType} (${errorCode}): ${errorMsg}`);
+            
+            // Format a user-friendly error message
+            let userErrorMsg = `Error: ${errorMsg}`;
+            
+            // Add more context for specific error types
+            if (errorType === "openai_error" || errorType === "api_error") {
+              if (errorCode === 429) {
+                userErrorMsg = "The AI service is currently experiencing high demand. Please try again in a moment.";
+              } else if (errorCode >= 500) {
+                userErrorMsg = "The AI service is currently unavailable. Please try again later.";
+              }
             }
             
-            // Parse the data
-            try {
-              const parsedData = JSON.parse(chunk);
-              
-              // Handle text events
-              if (parsedData.event === 'response.output_text.delta') {
-                // Extract the delta text
-                const textDelta = extractDeltaText(parsedData);
-                
-                if (textDelta) {
-                  // Update response text
-                  responseTextRef.current += textDelta;
-                  
-                  // Update UI with the new text
-                  updateMessageContent(responseTextRef.current, responseIdRef.current);
-                }
-              }
-            } catch (parseError) {
-              console.error("Error parsing event data:", parseError);
-              
-              // Try to recover with regex as a last resort
-              try {
-                const deltaPattern = /"delta"\s*:\s*"([^"]*)"/;
-                const match = chunk.match(deltaPattern);
-                
-                if (match && match[1]) {
-                  const extractedText = match[1];
-                  responseTextRef.current += extractedText;
-                  updateMessageContent(responseTextRef.current, responseIdRef.current);
-                }
-              } catch (recoveryError) {
-                console.error("Failed to recover from parse error:", recoveryError);
-              }
+            if (responseTextRef.current.length > 0) {
+              responseTextRef.current += `\n\n[${userErrorMsg}]`;
+            } else {
+              responseTextRef.current = userErrorMsg;
             }
-          } catch (chunkError) {
-            console.error("Error processing chunk:", chunkError);
+            
+            updateMessageContent(responseTextRef.current, responseIdRef.current, false);
+            cleanup();
+          } else if (parsedData.event === 'warning') {
+            // Handle warning events
+            const warningMsg = parsedData.data?.message || "Warning: Something went wrong.";
+            console.warn("Warning from server:", warningMsg);
+            addDebugInfo(`Warning: ${warningMsg}`);
+            
+            // For warnings, we might want to show them but not stop the response
+            if (responseTextRef.current.length > 0) {
+              responseTextRef.current += `\n\n[Note: ${warningMsg}]`;
+            } else {
+              responseTextRef.current = `Note: ${warningMsg}`;
+            }
+            
+            updateMessageContent(responseTextRef.current, responseIdRef.current, false);
+          } else if (parsedData.event === 'response.completed') {
+            console.log("Stream completed successfully");
+            cleanup();
+          } else {
+            // For any unknown event type, try to extract content with our helper
+            console.log("Unhandled event type:", parsedData.event);
+            const textDelta = extractDeltaText(parsedData);
+            if (textDelta) {
+              responseTextRef.current += textDelta;
+              updateMessageContent(responseTextRef.current, responseIdRef.current, false);
+            }
           }
         };
         
         // Handle errors
         eventSource.onerror = (error) => {
-          console.error("EventSource error:", error);
-          setDebugInfo(prev => prev + '\nEventSource error: ' + String(error));
-          clearTimeout(connectionTimeout);
-          eventSource.close();
-          setIsLoading(false);
+          console.error('EventSource error:', error);
+          let errorMessage = "Connection to AI assistant failed. ";
           
-          // If we have partial response text, show that instead of a generic error
-          if (responseTextRef.current.length > 0) {
-            updateMessageContent(responseTextRef.current + "\n\n[Connection ended]", responseIdRef.current);
+          // Handle specific connection errors
+          if (error && typeof error === 'object' && 'status' in error) {
+            const status = (error as any).status;
+            if (status === 429) {
+              errorMessage += "Service is experiencing high traffic. Please try again later.";
+            } else if (status >= 500) {
+              errorMessage += "Server is currently unavailable. Please try again shortly.";
+            } else if (status === 401 || status === 403) {
+              errorMessage += "Authentication error. Please refresh the page or contact support.";
+            }
           } else {
-            // Update message with error
-            setMessages(prev => {
-              const newMessages = JSON.parse(JSON.stringify(prev));
-              const index = newMessages.findIndex(
-                (m: any) => m.type === 'message' && m.role === 'assistant' && m.id === responseIdRef.current
-              );
-              
-              if (index !== -1) {
-                const assistantMessage = newMessages[index];
-                if (assistantMessage.type === 'message') {
-                  assistantMessage.content = [{
-                    type: 'output_text',
-                    text: 'Error connecting to the assistant. Please try again.'
-                  }];
-                }
-              }
-              
-              return newMessages;
-            });
+            errorMessage += "Please check your internet connection and try again.";
+          }
+          
+          addDebugInfo(`EventSource error: ${JSON.stringify(error)}`);
+          updateMessageContent(errorMessage, responseIdRef.current, false);
+          setIsLoading(false);
+          if (eventSource) {
+            eventSource.close();
           }
         };
       } catch (error) {
         console.error("Error processing message:", error);
-        setDebugInfo(prev => prev + '\nError: ' + String(error));
         
         // Add error message
-        const errorItem: Item = {
-          type: "message",
-          role: "assistant",
-          content: [{ 
-            type: "output_text", 
-            text: "I'm sorry, I encountered an error while processing your request. Please try again."
-          }],
-        };
-        
-        setMessages(prev => [...prev, errorItem]);
-      } finally {
+        updateMessageContent("I'm sorry, I encountered an error while processing your request. Please try again.", responseIdRef.current, false);
         setIsLoading(false);
       }
     } catch (error) {
       console.error("Error processing message:", error);
-      setDebugInfo(prev => prev + '\nError: ' + String(error));
       
       // Add error message
-      const errorItem: Item = {
-        type: "message",
-        role: "assistant",
-        content: [{ 
-          type: "output_text", 
-          text: "I'm sorry, I encountered an error while processing your request. Please try again."
-        }],
-      };
-      
-      setMessages(prev => [...prev, errorItem]);
+      setMessages(prev => [
+        ...prev,
+        {
+          type: "message",
+          role: "assistant",
+          id: messageId,
+          content: [{ 
+            type: "output_text", 
+            text: "I'm sorry, I encountered an error while processing your request. Please try again."
+          }],
+        }
+      ]);
+      setIsLoading(false);
     }
   };
 
@@ -499,9 +566,17 @@ export default function KaiAssistant() {
             <h2 className="text-lg font-semibold">Kai (Kellogg AI)</h2>
             <p className="text-sm text-gray-600">Your Kellogg student assistant</p>
           </div>
+          <div>
+            <button 
+              onClick={() => setShowDebug(!showDebug)} 
+              className="text-xs px-2 py-1 bg-gray-100 rounded"
+            >
+              {showDebug ? "Hide Debug" : "Show Debug"}
+            </button>
+          </div>
         </div>
         
-        {/* Debug Panel - Hidden by default */}
+        {/* Debug Panel - Shown/hidden with toggle */}
         {showDebug && (
           <div className="mt-2 p-2 bg-gray-100 rounded text-xs">
             <div className="flex flex-wrap gap-2 mb-2">
@@ -521,6 +596,45 @@ export default function KaiAssistant() {
               >
                 Try Alt API (GPT-3.5)
               </button>
+              
+              <button 
+                onClick={() => {
+                  setApiKeyStatus({status: 'testing_stream', details: {message: "Testing streaming implementation..."}});
+                  handleSendMessage("Testing streaming implementation", "/api/test-kai");
+                }} 
+                className="px-2 py-1 bg-green-100 rounded hover:bg-green-200"
+              >
+                Test Streaming
+              </button>
+              
+              <button 
+                onClick={() => {
+                  // Add a direct content update without any API calls
+                  addDebugInfo("Direct UI update test");
+                  const testId = uuidv4();
+                  setMessages(prev => [
+                    ...prev,
+                    {
+                      type: "message",
+                      role: "user",
+                      content: [{ type: "input_text", text: "Direct test" }],
+                    },
+                    {
+                      type: "message",
+                      role: "assistant",
+                      id: testId,
+                      content: [{ type: "output_text", text: "This is a direct test message without any API calls." }],
+                    }
+                  ]);
+                }} 
+                className="px-2 py-1 bg-red-100 rounded hover:bg-red-200"
+              >
+                Direct UI Test
+              </button>
+              
+              <div className="px-2 py-1 bg-yellow-100 rounded">
+                isLoading: {isLoading ? "TRUE" : "FALSE"}
+              </div>
             </div>
             
             {apiKeyStatus && (
@@ -533,6 +647,13 @@ export default function KaiAssistant() {
                 )}
               </div>
             )}
+            
+            <div className="mt-2">
+              <p><strong>Debug Log:</strong></p>
+              <pre className="mt-1 p-1 bg-gray-200 rounded text-xs max-h-40 overflow-auto whitespace-pre-wrap">
+                {debugInfo || "No debug info yet"}
+              </pre>
+            </div>
           </div>
         )}
       </div>
@@ -544,7 +665,8 @@ export default function KaiAssistant() {
           minHeight: 0,
           display: "flex",
           flexDirection: "column",
-          position: "relative"
+          position: "relative",
+          height: "calc(100vh - 250px)" // Force explicit height
         }}
       >
         <Chat 
